@@ -19,7 +19,9 @@ class ApiClient {
       baseURL: import.meta.env.VITE_API_BASE_URL || '/api/v1',
       timeout: 30000,
       withCredentials: true,
-      xsrfCookieName: 'csrftoken',
+      xsrfCookieName:
+        import.meta.env.VITE_CSRF_COOKIE_NAME ||
+        (import.meta.env.DEV ? 'dn_csrftoken' : 'csrftoken'),
       xsrfHeaderName: 'X-CSRFToken',
       headers: {
         'Content-Type': 'application/json',

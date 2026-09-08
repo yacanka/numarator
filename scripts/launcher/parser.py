@@ -25,6 +25,8 @@ def build_parser() -> argparse.ArgumentParser:
     add_scope(development)
     development.add_argument("--migrate", action="store_true")
     development.add_argument("--no-backend-reload", action="store_true")
+    development.add_argument("--backend-port", type=int, default=8000)
+    development.add_argument("--frontend-port", type=int, default=5173)
 
     prepare = commands.add_parser(
         "prepare-offline", help="Download and verify offline dependencies."

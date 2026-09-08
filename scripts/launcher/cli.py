@@ -39,6 +39,8 @@ def dispatch(project: Project, args: argparse.Namespace) -> None:
             scope,
             migrate=args.migrate,
             no_backend_reload=args.no_backend_reload,
+            backend_port=args.backend_port,
+            frontend_port=args.frontend_port,
         )
     elif args.command == "prepare-offline":
         prepare_offline(project, scope, project_path(project, args.offline_dir))

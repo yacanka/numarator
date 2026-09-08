@@ -24,6 +24,18 @@ python launcher.py dev --migrate
 `dev` komutunda migration yalnızca `--migrate` açıkça verildiğinde uygulanır.
 Backend `http://127.0.0.1:8000`, frontend `http://127.0.0.1:5173` üzerinde açılır.
 
+AW Center gibi ikinci bir Django/Vue uygulamasıyla aynı anda çalıştırmak için:
+
+```bash
+python launcher.py dev --backend-port 8100 --frontend-port 5174 --migrate
+```
+
+Bu durumda Numarator backend `http://127.0.0.1:8100`, arayüz
+`http://127.0.0.1:5174` üzerinde çalışır. Launcher Vite proxy'sini ve development
+CSRF/CORS origin'lerini seçilen portlarla eşler; dolu veya aynı portlarla
+başlatmayı reddeder. Development cookie'leri `dn_csrftoken` ve `dn_sessionid`
+adlarını kullanır, böylece aynı hosttaki diğer uygulamanın oturumunu etkilemez.
+
 Eski geliştirme kısayolları da kullanılabilir. macOS/Linux üzerinde:
 
 ```bash

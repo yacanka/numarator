@@ -28,6 +28,7 @@ from scripts.launcher.packaging import (
     write_zip,
 )
 from scripts.launcher.parser import build_parser
+from scripts.launcher.runtime import dev, require_runtime_ports
 
 
 def create_project(root: Path) -> Project:
@@ -188,6 +189,12 @@ class PackagingTests(unittest.TestCase):
 
 
 class ParserTests(unittest.TestCase):
+    def test_development_ports_are_explicit_and_keep_legacy_defaults(self) -> None:
+        defaults = build_parser().parse_args(["dev"])
+        self.assertEqual((defaults.backend_port, defaults.frontend_port), (8000, 5173))
+        custom = build_parser().parse_args(["dev", "--backend-port", "8100", "--frontend-port", "5174"])
+        self.assertEqual((custom.backend_port, custom.frontend_port), (8100, 5174))
+
     def test_setup_is_online_by_default_and_uses_skip_flags(self) -> None:
         parser = build_parser()
         setup = parser.parse_args(["setup", "--skip-backend"])
@@ -199,6 +206,38 @@ class ParserTests(unittest.TestCase):
         parser = build_parser()
         with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             parser.parse_args(["setup", "--ignore-backend"])
+
+
+class DevelopmentTests(unittest.TestCase):
+    @mock.patch("scripts.launcher.runtime.require_port")
+    def test_only_selected_ports_are_checked(self, port: mock.Mock) -> None:
+        require_runtime_ports(Scope(frontend=False), 8100, 5174)
+        port.assert_called_once_with(8100)
+        with self.assertRaises(LauncherError):
+            require_runtime_ports(Scope(), 8100, 8100)
+
+    def test_invalid_ports_fail_before_socket_binding(self) -> None:
+        for port in (0, -1, 65536):
+            with self.subTest(port=port), self.assertRaises(LauncherError):
+                require_runtime_ports(Scope(frontend=False), port, 5174)
+
+    @mock.patch("scripts.launcher.runtime.supervise")
+    @mock.patch("scripts.launcher.runtime.start")
+    @mock.patch("scripts.launcher.runtime.required_tool", return_value="npm")
+    @mock.patch("scripts.launcher.runtime.ensure_virtual_environment")
+    @mock.patch("scripts.launcher.runtime.require_runtime_ports")
+    def test_ports_reach_django_vite_and_proxy(self, _ports, _venv, _tool, start, supervise):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            dev(project, Scope(), migrate=False, no_backend_reload=True,
+                backend_port=8100, frontend_port=5174)
+        backend, frontend = start.call_args_list
+        self.assertIn("127.0.0.1:8100", backend.args[0])
+        self.assertIn("--noreload", backend.args[0])
+        self.assertEqual(backend.kwargs["extra_env"]["DEV_FRONTEND_PORT"], "5174")
+        self.assertIn("5174", frontend.args[0])
+        self.assertEqual(frontend.kwargs["extra_env"]["NUMARATOR_DEV_BACKEND_URL"], "http://127.0.0.1:8100")
+        supervise.assert_called_once()
 
 
 if __name__ == "__main__":

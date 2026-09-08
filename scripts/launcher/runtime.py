@@ -38,18 +38,23 @@ def test(project: Project, scope: Scope) -> None:
     print("[ok] tests completed")
 
 
-def dev(project: Project, scope: Scope, *, migrate: bool, no_backend_reload: bool) -> None:
+def dev(
+    project: Project, scope: Scope, *, migrate: bool, no_backend_reload: bool,
+    backend_port: int = 8000, frontend_port: int = 5173,
+) -> None:
     scope.require_any()
-    require_runtime_ports(scope)
+    require_runtime_ports(scope, backend_port, frontend_port)
     processes = []
     if scope.backend:
         ensure_virtual_environment(project, create=False)
         if migrate:
             django(project, ["migrate", "--no-input"])
-        command = [project.python, "manage.py", "runserver", "127.0.0.1:8000"]
+        command = [project.python, "manage.py", "runserver", f"127.0.0.1:{backend_port}"]
         if no_backend_reload:
             command.append("--noreload")
-        processes.append(start(command, project.backend, extra_env=DJANGO_ENV))
+        processes.append(start(command, project.backend, extra_env={
+            **DJANGO_ENV, "DEV_FRONTEND_PORT": str(frontend_port),
+        }))
     if scope.frontend:
         require_npm_script(project, "dev")
         processes.append(
@@ -62,13 +67,17 @@ def dev(project: Project, scope: Scope, *, migrate: bool, no_backend_reload: boo
                     "--host",
                     "127.0.0.1",
                     "--port",
-                    "5173",
+                    str(frontend_port),
                     "--strictPort",
                 ],
                 project.frontend,
+                extra_env={
+                    "NUMARATOR_DEV_BACKEND_URL": f"http://127.0.0.1:{backend_port}",
+                    "VITE_CSRF_COOKIE_NAME": "dn_csrftoken",
+                },
             )
         )
-    print_urls(scope)
+    print_urls(scope, backend_port, frontend_port)
     supervise(processes)
 
 
@@ -99,14 +108,18 @@ def run_npm_script(project: Project, name: str) -> None:
     run([required_tool("npm"), "run", name], project.frontend)
 
 
-def require_runtime_ports(scope: Scope) -> None:
+def require_runtime_ports(scope: Scope, backend_port: int = 8000, frontend_port: int = 5173) -> None:
+    if scope.backend and scope.frontend and backend_port == frontend_port:
+        raise LauncherError("backend and frontend must use different ports")
     if scope.backend:
-        require_port(8000)
+        require_port(backend_port)
     if scope.frontend:
-        require_port(5173)
+        require_port(frontend_port)
 
 
 def require_port(port: int) -> None:
+    if not 1 <= port <= 65535:
+        raise LauncherError(f"invalid port: {port}")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         try:
             probe.bind(("127.0.0.1", port))
@@ -114,9 +127,9 @@ def require_port(port: int) -> None:
             raise LauncherError(f"port is unavailable: 127.0.0.1:{port}") from error
 
 
-def print_urls(scope: Scope) -> None:
+def print_urls(scope: Scope, backend_port: int = 8000, frontend_port: int = 5173) -> None:
     if scope.backend:
-        print("Backend:  http://127.0.0.1:8000")
+        print(f"Backend:  http://127.0.0.1:{backend_port}")
     if scope.frontend:
-        print("Frontend: http://127.0.0.1:5173")
+        print(f"Frontend: http://127.0.0.1:{frontend_port}")
     print("Press Ctrl+C to stop.")

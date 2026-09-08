@@ -56,7 +56,7 @@ class CookieAuthenticationApiTests(TestCase):
     def test_login_sets_httponly_auth_cookies_with_csrf(self):
         """Successful login stores tokens in HttpOnly cookies only."""
         csrf_response = self.client.get('/api/v1/auth/csrf/')
-        csrf_token = csrf_response.cookies['csrftoken'].value
+        csrf_token = csrf_response.cookies[settings.CSRF_COOKIE_NAME].value
         response = self.client.post(
             '/api/v1/auth/token/',
             {'username': 'operator', 'password': 'secret'},
@@ -82,7 +82,7 @@ class CookieAuthenticationApiTests(TestCase):
     def test_refresh_uses_refresh_cookie_and_does_not_return_token(self):
         """Refresh endpoint rotates access cookie without exposing JWTs."""
         csrf_response = self.client.get('/api/v1/auth/csrf/')
-        csrf_token = csrf_response.cookies['csrftoken'].value
+        csrf_token = csrf_response.cookies[settings.CSRF_COOKIE_NAME].value
         self.client.post(
             '/api/v1/auth/token/',
             {'username': 'operator', 'password': 'secret'},
