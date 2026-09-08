@@ -8,3 +8,5 @@ docnumber/staticfiles/
 docnumber/media/
 frontend/node_modules/
 frontend/dist/
+offline/
+numarator-offline*.zip
