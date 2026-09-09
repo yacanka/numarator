@@ -10,7 +10,7 @@ import {
 import {
   GridOutline, DocumentTextOutline, SettingsOutline,
   BarChartOutline, LogOutOutline, PersonOutline,
-  ChevronDownOutline,
+  ChevronDownOutline, KeyOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
 
@@ -23,7 +23,7 @@ const menuThemeOverrides = {
   itemColorActiveCollapsed: 'rgba(24, 144, 255, 0.15)',
 }
 
-const menuOptions = [
+const menuOptions = computed(() => [
   {
     label: 'Dashboard',
     key: '/',
@@ -39,12 +39,17 @@ const menuOptions = [
     key: '/documents',
     icon: () => h(NIcon, null, { default: () => h(DocumentTextOutline) }),
   },
+  ...(authStore.isAdmin ? [{
+    label: 'API Anahtarları',
+    key: '/settings/api-keys',
+    icon: () => h(NIcon, null, { default: () => h(KeyOutline) }),
+  }] : []),
   {
     label: 'Ayarlar',
     key: '/settings',
     icon: () => h(NIcon, null, { default: () => h(SettingsOutline) }),
   },
-]
+])
 
 const activeKey = computed(() => route.path)
 
@@ -84,7 +89,7 @@ function handleUserAction(key: string) {
         <div class="logo-icon">📋</div>
         <Transition name="fade">
           <n-text v-if="!collapsed" strong style="color: var(--n-text-color); font-size: 16px; white-space: nowrap">
-            DocNumber
+            Numarator
           </n-text>
         </Transition>
       </div>

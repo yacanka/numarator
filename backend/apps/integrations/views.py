@@ -1,7 +1,7 @@
 from rest_framework import mixins, status, viewsets
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
 from apps.core.authentication import CookieJWTAuthentication
@@ -16,11 +16,17 @@ class ApiCredentialViewSet(
     mixins.CreateModelMixin,
     viewsets.GenericViewSet,
 ):
-    """Manage API keys for the currently authenticated browser user."""
+    """Allow staff administrators to manage their own API keys."""
 
     authentication_classes = [CookieJWTAuthentication, SessionAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminUser]
     queryset = ApiCredential.objects.none()
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        # Creation responses contain a secret that must not enter browser caches.
+        response['Cache-Control'] = 'no-store'
+        return response
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):

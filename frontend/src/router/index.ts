@@ -47,6 +47,12 @@ const router = createRouter({
           meta: { title: 'Belgeler' },
         },
         {
+          path: 'settings/api-keys',
+          name: 'ApiKeys',
+          component: () => import('@/views/ApiKeysView.vue'),
+          meta: { title: 'API Anahtarları', requiresAdmin: true },
+        },
+        {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/SettingsView.vue'),
@@ -70,6 +76,10 @@ router.beforeEach(async (to) => {
 
   if (!to.meta.public && !authStore.isAuthenticated) {
     return { name: 'Login', query: { redirect: to.fullPath } }
+  }
+
+  if (to.meta.requiresAdmin && !authStore.isAdmin) {
+    return { name: 'Dashboard' }
   }
 })
 

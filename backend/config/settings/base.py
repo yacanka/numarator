@@ -99,7 +99,7 @@ CACHES = {
             'CACHE_BACKEND',
             default='django.core.cache.backends.locmem.LocMemCache',
         ),
-        'LOCATION': config('CACHE_LOCATION', default='docnumber-local'),
+        'LOCATION': config('CACHE_LOCATION', default='numarator-local'),
     }
 }
 

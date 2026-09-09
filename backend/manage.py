@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Django command-line utility for DocNumber."""
+"""Django command-line utility for Numarator."""
 import os
 import sys
 

@@ -1,4 +1,4 @@
-"""WSGI entry point for the DocNumber project."""
+"""WSGI entry point for the Numarator project."""
 import os
 
 from django.core.wsgi import get_wsgi_application

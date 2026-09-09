@@ -2,6 +2,12 @@
 
 Numarator, tanımlı formatlardan atomik ve izlenebilir belge numaraları üreten Django REST + Vue uygulamasıdır.
 
+Önceki DocNumber sürümünden geçişte kayıtlı tema ve görünüm tercihleri korunur;
+yeni kayıtlar `numarator_theme` ve `numarator_density` anahtarlarını kullanır.
+Oturum uyumluluğu için mevcut `dn_` çerez adları korunur. `.env.example` yeni
+kurulumlarda veritabanı ve kullanıcı adı olarak `numarator` önerir; mevcut
+kurulumların `DB_NAME` ve `DB_USER` değerlerini değiştirmek gerekmez.
+
 - Tarayıcı arayüzü API'si: `/api/v1/`
 - Dış uygulamalar için özel API: `/api/private/v1/`
 - OpenAPI şeması: `/api/schema/`

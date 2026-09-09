@@ -44,6 +44,21 @@ class CurrentUserApiTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('email', response.data['error']['details'])
 
+    def test_profile_exposes_admin_status_without_allowing_privilege_escalation(self):
+        response = self.client.get('/api/v1/auth/me/')
+        self.assertIs(response.data['data']['is_staff'], False)
+        response = self.client.patch('/api/v1/auth/me/', {
+            'is_staff': True, 'is_superuser': True,
+        }, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_staff)
+        self.assertFalse(self.user.is_superuser)
+        self.user.is_staff = True
+        self.user.save(update_fields=['is_staff'])
+        response = self.client.get('/api/v1/auth/me/')
+        self.assertIs(response.data['data']['is_staff'], True)
+
 
 class CookieAuthenticationApiTests(TestCase):
     """Tests for HttpOnly-cookie and CSRF-backed authentication."""

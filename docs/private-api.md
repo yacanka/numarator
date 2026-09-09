@@ -4,7 +4,24 @@ Bu API, ERP, CRM, e-ticaret veya belge yönetim sistemi gibi güvenilen sunucu u
 
 ## 1. Başlangıç
 
-Her dış uygulama için ayrı bir API anahtarı oluşturun. Anahtar yönetimi, Numarator'da oturum açmış kullanıcı tarafından aşağıdaki endpointlerden yapılır; bu yönetim endpointleri mevcut HttpOnly cookie + CSRF korumasını kullanır.
+Her dış uygulama için ayrı bir API anahtarı oluşturun. Anahtar yönetimi yalnızca Numarator'da oturum açmış adminlere (`is_staff=True`) açıktır. Her admin kendi oluşturduğu anahtarları yönetir. Admin olmayan kullanıcılar menüyü göremez, `/settings/api-keys` sayfasına ve yönetim endpointlerine erişemez. Daha önce oluşturulmuş anahtarların dış uygulama erişim davranışı değişmez.
+
+### Arayüzden anahtar oluşturma
+
+1. Admin hesabıyla giriş yapın ve kullanacağınız formatı **Format Yönetimi** ekranından aktif edin.
+2. Sol menüden **API Anahtarları → Yeni API Anahtarı** seçeneğini açın.
+3. Uygulama adını (ör. `AW Center Local`) girin ve ihtiyaç duyduğu yetkileri seçin.
+4. İzin verilecek formatları ad ve kodlarına göre seçin; arayüz UUID değerlerini otomatik gönderir. **Tüm aktif formatlara erişim ver** seçeneği gelecekte aktif edilecek formatları da kapsar.
+5. İsteğe bağlı son geçerlilik tarihini tarayıcınızın yerel saat diliminde seçin. Boş bırakırsanız anahtar süresizdir.
+6. **Anahtar oluştur** düğmesine basın. Anahtar yalnızca bu pencerede gösterilir; kopyalayıp güvenli yapılandırmanıza kaydedin ve kaydettiğinizi işaretleyerek pencereyi kapatın. Sayfayı yenilemek anahtarı kaybettirir.
+
+AW Center için anahtarı `NUMARATOR_API_KEY` alanına, seçilen formatın **code** değerini `NUMARATOR_PROJECT_FORMATS` içine yazın. UUID yalnızca anahtarın format yetkileri içindir. Env değişikliğinden sonra AW Center'ı yeniden başlatın.
+
+Anahtar listesinde yetkiler, format kodları, son kullanım, son geçerlilik ve iptal durumu görünür. **İptal et** işlemi onaydan sonra anahtarı kalıcı olarak devre dışı bırakır. Anahtarı yenilemek için yenisini oluşturun, dış uygulamada değiştirin ve eskisini iptal edin.
+
+### Yönetim endpointleri
+
+Swagger veya doğrudan API kullanımı da mümkündür; yönetim endpointleri aynı admin kısıtını ve mevcut HttpOnly cookie + CSRF korumasını kullanır.
 
 | İşlem | Endpoint |
 | --- | --- |

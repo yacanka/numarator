@@ -9,6 +9,7 @@ export const useAuthStore = defineStore('auth', () => {
   const sessionReady = ref(false)
 
   const isAuthenticated = computed(() => sessionReady.value)
+  const isAdmin = computed(() => user.value?.is_staff === true)
   const fullName = computed(() => {
     if (!user.value) return ''
     return `${user.value.first_name} ${user.value.last_name}`.trim() || user.value.username
@@ -40,5 +41,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { user, isAuthenticated, fullName, login, logout, fetchUser, updateProfile }
+  return { user, isAuthenticated, isAdmin, fullName, login, logout, fetchUser, updateProfile }
 })

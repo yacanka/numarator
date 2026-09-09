@@ -17,8 +17,8 @@ class ApiCredentialManagementTests(TestCase):
     """Cover one-time key disclosure and owner-isolated management."""
 
     def setUp(self):
-        self.user = get_user_model().objects.create_user('owner', password='secret')
-        self.other_user = get_user_model().objects.create_user('other', password='secret')
+        self.user = get_user_model().objects.create_user('owner', password='secret', is_staff=True)
+        self.other_user = get_user_model().objects.create_user('other', password='secret', is_staff=True)
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
@@ -41,6 +41,69 @@ class ApiCredentialManagementTests(TestCase):
         self.assertNotIn('api_key', self.client.get(
             f'/api/v1/integrations/api-keys/{credential.id}/'
         ).data['data'])
+        self.assertEqual(response['Cache-Control'], 'no-store')
+        listed = self.client.get('/api/v1/integrations/api-keys/').data['data']
+        self.assertEqual(len(listed), 1)
+        self.assertNotIn('api_key', listed[0])
+        self.assertNotIn('key_hash', listed[0])
+
+    def test_non_admin_cannot_access_any_management_action(self):
+        self.user.is_staff = False
+        self.user.save(update_fields=['is_staff'])
+        credential, _ = ApiCredential.issue(owner=self.user, name='Existing key')
+        base = '/api/v1/integrations/api-keys/'
+        for method, url in [
+            ('get', base), ('post', base), ('get', f'{base}scopes/'),
+            ('get', f'{base}{credential.id}/'), ('post', f'{base}{credential.id}/revoke/'),
+        ]:
+            with self.subTest(method=method, url=url):
+                self.assertEqual(getattr(self.client, method)(url).status_code, 403)
+        credential.refresh_from_db()
+        self.assertIsNone(credential.revoked_at)
+        self.assertEqual(ApiCredential.objects.count(), 1)
+
+    def test_anonymous_cannot_manage_keys(self):
+        self.client.force_authenticate(user=None)
+        self.assertEqual(self.client.get('/api/v1/integrations/api-keys/').status_code, 401)
+
+    def test_staff_list_remains_owner_isolated(self):
+        own, _ = ApiCredential.issue(owner=self.user, name='Own key')
+        other, _ = ApiCredential.issue(owner=self.other_user, name='Other key')
+        response = self.client.get('/api/v1/integrations/api-keys/')
+        self.assertEqual([item['id'] for item in response.data['data']], [str(own.id)])
+        self.assertEqual(self.client.get(
+            f'/api/v1/integrations/api-keys/{other.id}/'
+        ).status_code, 404)
+
+    def test_staff_can_discover_scopes_and_revoke_own_key_idempotently(self):
+        response = self.client.get('/api/v1/integrations/api-keys/scopes/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({item['code'] for item in response.data['data']}, set(API_SCOPES))
+        credential, _ = ApiCredential.issue(owner=self.user, name='Own key')
+        url = f'/api/v1/integrations/api-keys/{credential.id}/revoke/'
+        first = self.client.post(url)
+        second = self.client.post(url)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertFalse(first.data['data']['active'])
+        self.assertEqual(first.data['data']['revoked_at'], second.data['data']['revoked_at'])
+        self.assertNotIn('api_key', first.data['data'])
+
+    def test_create_preserves_selected_format_and_expiration(self):
+        document_format = DocumentFormat.objects.create(
+            code='SELECTED', name='Selected', status='active', created_by=self.user,
+        )
+        expires_at = timezone.now() + timedelta(days=30)
+        response = self.client.post('/api/v1/integrations/api-keys/', {
+            'name': 'Scoped key', 'scopes': ['formats:read'],
+            'allowed_formats': [str(document_format.id)], 'expires_at': expires_at.isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        credential = ApiCredential.objects.get()
+        self.assertEqual(list(credential.allowed_formats.all()), [document_format])
+        self.assertEqual(credential.expires_at, expires_at)
+        self.assertEqual(response.data['data']['allowed_format_codes'], ['SELECTED'])
+        self.assertFalse(response.data['data']['all_formats'])
 
     def test_revoke_cannot_target_another_users_key(self):
         credential, _ = ApiCredential.issue(owner=self.other_user, name='Other ERP')

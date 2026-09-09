@@ -23,7 +23,7 @@ exit /b 0
 
 :print_header
 echo ============================================================
-echo  DocNumber development launcher
+echo  Numarator development launcher
 echo ============================================================
 echo Root      : %ROOT_DIR%
 echo Backend   : %BACKEND_DIR%
@@ -91,10 +91,10 @@ exit /b 0
 
 :start_services
 echo [4/5] Starting backend and frontend in separate windows...
-start "DocNumber Backend" /D "%BACKEND_DIR%" cmd /k "set DJANGO_SETTINGS_MODULE=%DJANGO_SETTINGS_MODULE%&& ^"%VENV_PYTHON%^" manage.py runserver 127.0.0.1:8000"
+start "Numarator Backend" /D "%BACKEND_DIR%" cmd /k "set DJANGO_SETTINGS_MODULE=%DJANGO_SETTINGS_MODULE%&& ^"%VENV_PYTHON%^" manage.py runserver 127.0.0.1:8000"
 if errorlevel 1 call :fail "Could not start backend terminal."
 if errorlevel 1 exit /b 1
-start "DocNumber Frontend" /D "%FRONTEND_DIR%" cmd /k "npm run dev -- --host 127.0.0.1"
+start "Numarator Frontend" /D "%FRONTEND_DIR%" cmd /k "npm run dev -- --host 127.0.0.1"
 if errorlevel 1 call :fail "Could not start frontend terminal."
 if errorlevel 1 exit /b 1
 exit /b 0

@@ -21,7 +21,7 @@ NC='\033[0m' # No Color
 # Functions
 print_header() {
     echo "============================================================"
-    echo "  DocNumber development launcher"
+    echo "  Numarator development launcher"
     echo "============================================================"
     echo "Root      : $ROOT_DIR"
     echo "Backend   : $BACKEND_DIR"
@@ -41,7 +41,7 @@ success() {
 print_success() {
     echo ""
     echo "============================================================"
-    echo -e "${GREEN}  DocNumber development environment started!${NC}"
+    echo -e "${GREEN}  Numarator development environment started!${NC}"
     echo "============================================================"
     echo "Backend URL : $BACKEND_URL"
     echo "Frontend URL: $FRONTEND_URL"

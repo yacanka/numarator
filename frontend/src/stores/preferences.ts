@@ -3,16 +3,17 @@ import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import type { InterfaceDensity, ThemePreference } from '@/types'
 
-const THEME_STORAGE_KEY = 'docnumber_theme'
-const DENSITY_STORAGE_KEY = 'docnumber_density'
+const THEME_STORAGE_KEY = 'numarator_theme'
+const DENSITY_STORAGE_KEY = 'numarator_density'
 
 function readThemePreference(): ThemePreference {
-  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY)
+  // Preserve saved preferences from installations using the former application name.
+  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY) ?? localStorage.getItem('docnumber_theme')
   return storedTheme === 'dark' ? 'dark' : 'light'
 }
 
 function readInterfaceDensity(): InterfaceDensity {
-  const storedDensity = localStorage.getItem(DENSITY_STORAGE_KEY)
+  const storedDensity = localStorage.getItem(DENSITY_STORAGE_KEY) ?? localStorage.getItem('docnumber_density')
   return storedDensity === 'compact' ? 'compact' : 'comfortable'
 }
 

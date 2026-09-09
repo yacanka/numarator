@@ -30,7 +30,7 @@ async function submitLogin() {
 
 <template>
   <main class="login-page">
-    <n-card class="login-card" title="DocNumber Login">
+    <n-card class="login-card" title="Numarator Login">
       <n-space vertical size="large">
         <n-alert v-if="errorMessage" type="error">{{ errorMessage }}</n-alert>
         <n-form @submit.prevent="submitLogin">

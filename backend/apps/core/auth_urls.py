@@ -22,8 +22,8 @@ class CurrentUserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = get_user_model()
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
-        read_only_fields = ['id', 'username']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_staff']
+        read_only_fields = ['id', 'username', 'is_staff']
         extra_kwargs = {
             'email': {'required': True, 'allow_blank': False},
             'first_name': {'required': False, 'allow_blank': True},
