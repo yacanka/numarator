@@ -32,7 +32,7 @@ from scripts.launcher.runtime import dev, require_runtime_ports
 
 
 def create_project(root: Path) -> Project:
-    backend = root / "docnumber"
+    backend = root / "backend"
     requirements = backend / "requirements"
     frontend = root / "frontend"
     requirements.mkdir(parents=True)
@@ -53,7 +53,7 @@ class ProjectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = create_project(Path(temporary))
 
-        self.assertEqual(project.backend.name, "docnumber")
+        self.assertEqual(project.backend.name, "backend")
         self.assertEqual(project.requirements.name, "development.txt")
         self.assertEqual(project.venv, project.backend / ".venv")
 
@@ -127,8 +127,8 @@ class ManifestTests(unittest.TestCase):
             project = create_project(Path(temporary))
             locks = lock_metadata(project, Scope(frontend=False))
 
-        self.assertIn("docnumber/requirements/development.txt", locks)
-        self.assertIn("docnumber/requirements/base.txt", locks)
+        self.assertIn("backend/requirements/development.txt", locks)
+        self.assertIn("backend/requirements/base.txt", locks)
 
     @mock.patch("scripts.launcher.offline_manifest.git_commit", return_value="abc123")
     @mock.patch("scripts.launcher.offline_manifest.toolchain_metadata", return_value={})
@@ -148,6 +148,23 @@ class ManifestTests(unittest.TestCase):
 
 class PackagingTests(unittest.TestCase):
     @mock.patch("scripts.launcher.packaging.subprocess.run")
+    def test_source_packaging_excludes_local_signing_key_even_if_tracked(
+        self, run_mock: mock.Mock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            key_file = project.backend / ".dev-secret-key"
+            key_file.touch()
+            run_mock.return_value = mock.Mock(
+                returncode=0,
+                stdout="backend/manage.py\nbackend/.dev-secret-key\n",
+            )
+            files = tracked_source_files(project)
+
+        self.assertIn(project.manage_py, files)
+        self.assertNotIn(key_file, files)
+
+    @mock.patch("scripts.launcher.packaging.subprocess.run")
     def test_source_packaging_keeps_both_application_sides(
         self, run_mock: mock.Mock
     ) -> None:
@@ -155,7 +172,7 @@ class PackagingTests(unittest.TestCase):
             project = create_project(Path(temporary))
             run_mock.return_value = mock.Mock(
                 returncode=0,
-                stdout="docnumber/manage.py\nfrontend/package.json\n",
+                stdout="backend/manage.py\nfrontend/package.json\n",
             )
             files = tracked_source_files(project)
 

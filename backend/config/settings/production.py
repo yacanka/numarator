@@ -1,6 +1,5 @@
-from django.core.exceptions import ImproperlyConfigured
-
 from .base import *  # noqa: F403
+from .secret_key import validate_secret_key
 
 DEBUG = False
 SESSION_COOKIE_SECURE = True
@@ -12,8 +11,7 @@ SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
-if SECRET_KEY == 'unsafe-dev-only-change-me':  # noqa: F405
-    raise ImproperlyConfigured('SECRET_KEY must be set in production.')
+SECRET_KEY = validate_secret_key(SECRET_KEY)  # noqa: F405
 
 DATABASES['default'].update({  # noqa: F405
     'ENGINE': 'django.db.backends.postgresql',

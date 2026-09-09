@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_DIR="$ROOT_DIR/docnumber"
+BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 VENV_DIR="$BACKEND_DIR/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"

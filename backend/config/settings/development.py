@@ -1,4 +1,7 @@
 from .base import *  # noqa: F403
+from .secret_key import development_secret_key
+
+SECRET_KEY = development_secret_key(SECRET_KEY, BASE_DIR)  # noqa: F405
 
 DEBUG = True
 AUTH_COOKIE_SECURE = config('AUTH_COOKIE_SECURE', default=False, cast=bool)  # noqa: F405

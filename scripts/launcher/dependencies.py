@@ -31,7 +31,7 @@ def ensure_virtual_environment(project: Project, *, create: bool) -> None:
         check_virtual_environment_version(project)
         return
     if not create:
-        raise LauncherError("docnumber/.venv is missing; run `python launcher.py setup`")
+        raise LauncherError("backend/.venv is missing; run `python launcher.py setup`")
     if project.venv.exists():
         raise LauncherError(f"incomplete virtual environment: {project.venv}")
     run([sys.executable, "-m", "venv", project.venv], project.root)
@@ -45,7 +45,7 @@ def check_virtual_environment_version(project: Project) -> None:
     if version[:2] < MINIMUM_PYTHON:
         rendered = ".".join(str(part) for part in version)
         raise LauncherError(
-            f"docnumber/.venv uses unsupported Python {rendered}; recreate it with Python 3.11+"
+            f"backend/.venv uses unsupported Python {rendered}; recreate it with Python 3.11+"
         )
 
 

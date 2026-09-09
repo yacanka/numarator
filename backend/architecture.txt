@@ -18,7 +18,7 @@
 │  └── Distributed locks & caching                    │
 └─────────────────────────────────────────────────────┘
 
-docnumber/
+backend/
 ├── config/
 │   ├── settings/
 │   │   ├── base.py

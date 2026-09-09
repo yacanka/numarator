@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 
 set "ROOT_DIR=%~dp0"
-set "BACKEND_DIR=%ROOT_DIR%docnumber"
+set "BACKEND_DIR=%ROOT_DIR%backend"
 set "FRONTEND_DIR=%ROOT_DIR%frontend"
 set "VENV_DIR=%BACKEND_DIR%\.venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"

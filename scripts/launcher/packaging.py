@@ -16,7 +16,7 @@ from .offline_manifest import (
     verify_offline_manifest,
 )
 
-EXCLUDED_NAMES = {".env", ".env.local", ".DS_Store", "db.sqlite3"}
+EXCLUDED_NAMES = {".env", ".env.local", ".dev-secret-key", ".DS_Store", "db.sqlite3"}
 EXCLUDED_PARTS = {
     ".git",
     ".venv",

@@ -33,7 +33,7 @@ class Project:
 
     @property
     def backend(self) -> Path:
-        return self.root / "docnumber"
+        return self.root / "backend"
 
     @property
     def frontend(self) -> Path:

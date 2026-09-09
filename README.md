@@ -11,6 +11,16 @@ Dış uygulama entegrasyonunun kimlik doğrulama, endpoint, idempotency, hata ve
 
 ## Yerel geliştirme
 
+Backend kaynak kodu `backend/`, frontend kaynak kodu `frontend/` altında bulunur.
+Python sanal ortamı `backend/.venv/` konumunda oluşturulur.
+
+`SECRET_KEY`, ortam değişkeninden veya `backend/.env` dosyasından okunur ve en az
+32 bayt olmalıdır. Production için kriptografik olarak rastgele bir anahtar
+tanımlamak zorunludur. Geliştirmede değer boşsa ilk açılışta rastgele bir anahtar
+`backend/.dev-secret-key` dosyasına yazılır ve sonraki açılışlarda yeniden kullanılır.
+Bu dosya Git'e ve offline paketlere alınmaz. Anahtarı değiştirmek veya yerel anahtar
+dosyasını silmek mevcut JWT ve oturumları geçersiz kılar; yeniden giriş gerekir.
+
 Proje kök dizinindeki Numarator'a özel launcher bağımlılık kurulumunu, kontrolleri,
 testleri, geliştirme servislerini ve offline paketlemeyi yönetir:
 
