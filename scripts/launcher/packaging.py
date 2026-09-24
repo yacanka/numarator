@@ -16,7 +16,7 @@ from .offline_manifest import (
     verify_offline_manifest,
 )
 
-EXCLUDED_NAMES = {".env", ".env.local", ".dev-secret-key", ".DS_Store", "db.sqlite3"}
+EXCLUDED_NAMES = {".env", ".env.local", ".dev-secret-key", ".native-build.json", ".DS_Store", "db.sqlite3"}
 EXCLUDED_PARTS = {
     ".git",
     ".venv",
@@ -32,6 +32,9 @@ EXCLUDED_SUFFIXES = {
     ".bak",
     ".db",
     ".dump",
+    ".env",
+    ".crt",
+    ".cer",
     ".key",
     ".log",
     ".p12",
@@ -100,6 +103,7 @@ def tracked_source_files(project: Project) -> list[Path]:
         project.root / "launcher.py",
         project.root / "scripts/__init__.py",
         project.root / "scripts/test_launcher.py",
+        project.root / "scripts/test_native.py",
         project.root / "scripts/launcher/__init__.py",
         project.root / "scripts/launcher/cli.py",
         project.root / "scripts/launcher/dependencies.py",
@@ -109,6 +113,19 @@ def tracked_source_files(project: Project) -> list[Path]:
         project.root / "scripts/launcher/parser.py",
         project.root / "scripts/launcher/process.py",
         project.root / "scripts/launcher/runtime.py",
+        project.root / "scripts/launcher/production.py",
+        project.backend / "requirements/native.txt",
+        project.backend / "config/native_asgi.py",
+        project.backend / "config/native_frontend.py",
+        project.backend / "config/native_lock.py",
+        project.backend / "config/native_runtime.py",
+        project.backend / "config/native_serialization.py",
+        project.backend / "config/native_tls.py",
+        project.backend / "config/native_urls.py",
+        project.backend / "config/settings/native.py",
+        project.backend / "config/settings/native_environment.py",
+        project.root / "docs/launcher-production.md",
+        project.root / "docs/production.env.example",
     ]
     for path in launcher_files:
         if path.is_file():

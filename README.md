@@ -66,6 +66,21 @@ start-dev.bat
 
 Başlatıcı backend bağımlılıklarını ve frontend paketlerini kurar, Django kontrollerini/migration'ları çalıştırır ve iki servisi başlatır.
 
+## Launcher ile HTTPS production
+
+AW Center benzeri doğrudan HTTPS çalıştırma için ayrı native profil bulunur:
+
+```bash
+python launcher.py setup --environment production
+python launcher.py prod --help
+```
+
+`prod`, harici env/TLS dosyalarıyla Vue arayüzünü ve API'yi tek HTTPS adresinde
+sunar. SQLite verisi repository dışında tutulur; mevcut Docker/PostgreSQL/Redis
+profili korunur ve veriler otomatik taşınmaz. İlk kurulum, sertifika, yönetici
+hesabı, offline production ve yeniden başlatma adımları için
+[HTTPS launcher rehberine](docs/launcher-production.md) bakın.
+
 ## Offline kurulum
 
 Offline bağımlılıkları internet erişimi olan ve hedef bilgisayarla aynı işletim sistemi,

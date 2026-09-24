@@ -10,13 +10,15 @@ from .dependencies import install, prepare_offline
 from .model import LauncherError, Project, Scope
 from .packaging import package_offline
 from .parser import build_parser
+from .production import prod
 from .runtime import check, dev, test
 
 
 def main(arguments: list[str] | None = None) -> int:
     try:
         args = build_parser().parse_args(arguments)
-        project = Project.load(Path(__file__).resolve().parents[2])
+        environment = "production" if args.command == "prod" else getattr(args, "environment", "development")
+        project = Project.load(Path(__file__).resolve().parents[2], environment)
         print_context(project, args.command)
         dispatch(project, args)
         return 0
@@ -41,6 +43,14 @@ def dispatch(project: Project, args: argparse.Namespace) -> None:
             no_backend_reload=args.no_backend_reload,
             backend_port=args.backend_port,
             frontend_port=args.frontend_port,
+        )
+    elif args.command == "prod":
+        prod(
+            project, host=args.host, port=args.port,
+            env_file=Path(args.env_file).expanduser().absolute(),
+            certificate_file=Path(args.tls_cert_file).expanduser().absolute(),
+            private_key_file=Path(args.tls_key_file).expanduser().absolute(),
+            migrate=args.migrate, build_frontend=args.build_frontend, check_only=args.check,
         )
     elif args.command == "prepare-offline":
         prepare_offline(project, scope, project_path(project, args.offline_dir))

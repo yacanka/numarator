@@ -1,11 +1,16 @@
+import os
 from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-LOG_DIR = BASE_DIR / 'logs'
-LOG_DIR.mkdir(exist_ok=True)
+if os.environ.get('DJANGO_SETTINGS_MODULE') == 'config.settings.native':
+    from .native_environment import config, data_dir
+    LOG_DIR = data_dir / 'logs'
+else:
+    LOG_DIR = BASE_DIR / 'logs'
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 SECRET_KEY = config('SECRET_KEY', default='')
 DEBUG = config('DEBUG', default=False, cast=bool)

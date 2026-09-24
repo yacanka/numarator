@@ -16,10 +16,13 @@ class Project:
     """Validated Numarator repository paths."""
 
     root: Path
+    environment: str = "development"
 
     @classmethod
-    def load(cls, root: Path) -> "Project":
-        project = cls(root.expanduser().resolve())
+    def load(cls, root: Path, environment: str = "development") -> "Project":
+        if environment not in ("development", "production"):
+            raise LauncherError("unsupported launcher environment")
+        project = cls(root.expanduser().resolve(), environment)
         expected = (
             project.manage_py,
             project.package_json,
@@ -53,7 +56,8 @@ class Project:
 
     @property
     def requirements(self) -> Path:
-        return self.backend / "requirements" / "development.txt"
+        name = "native.txt" if self.environment == "production" else "development.txt"
+        return self.backend / "requirements" / name
 
     @property
     def venv(self) -> Path:

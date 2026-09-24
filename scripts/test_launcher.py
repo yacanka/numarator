@@ -29,6 +29,7 @@ from scripts.launcher.packaging import (
 )
 from scripts.launcher.parser import build_parser
 from scripts.launcher.runtime import dev, require_runtime_ports
+from scripts.launcher.production import prod, require_address, external_file
 
 
 def create_project(root: Path) -> Project:
@@ -39,6 +40,7 @@ def create_project(root: Path) -> Project:
     frontend.mkdir()
     (backend / "manage.py").write_text("# test\n", encoding="utf-8")
     (requirements / "development.txt").write_text("-r base.txt\n", encoding="utf-8")
+    (requirements / "native.txt").write_text("-r base.txt\nuvicorn==0.53.0\n", encoding="utf-8")
     (requirements / "base.txt").write_text("Django==4.2.10\n", encoding="utf-8")
     (frontend / "package.json").write_text(
         json.dumps({"scripts": {"dev": "vite"}, "dependencies": {"vue": "3"}}),
@@ -255,6 +257,82 @@ class DevelopmentTests(unittest.TestCase):
         self.assertIn("5174", frontend.args[0])
         self.assertEqual(frontend.kwargs["extra_env"]["NUMARATOR_DEV_BACKEND_URL"], "http://127.0.0.1:8100")
         supervise.assert_called_once()
+
+
+class ProductionTests(unittest.TestCase):
+    def test_production_dependencies_and_offline_locks_are_separate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            development = create_project(Path(temporary))
+            production = Project.load(development.root, "production")
+            self.assertEqual(production.requirements.name, "native.txt")
+            self.assertNotEqual(lock_metadata(development, Scope()), lock_metadata(production, Scope()))
+
+    @mock.patch("scripts.launcher.offline_manifest.git_commit", return_value="abc123")
+    @mock.patch("scripts.launcher.offline_manifest.toolchain_metadata", return_value={})
+    def test_frontend_only_offline_bundle_cannot_cross_environments(self, toolchain, commit):
+        with tempfile.TemporaryDirectory() as temporary:
+            development = create_project(Path(temporary))
+            production = Project.load(development.root, "production")
+            offline = development.root / "offline"
+            cache = offline / "npm-cache"
+            cache.mkdir(parents=True)
+            (cache / "entry").write_text("cached")
+            scope = Scope(backend=False)
+            write_offline_manifest(development, scope, offline)
+            with self.assertRaises(LauncherError):
+                verify_offline_manifest(production, scope, offline)
+
+    def test_production_setup_parser_preserves_online_default(self):
+        args = build_parser().parse_args(["setup", "--environment", "production"])
+        self.assertEqual(args.environment, "production")
+        self.assertEqual(args.mode, "online")
+
+    def test_invalid_bind_addresses_are_rejected(self):
+        for host, port in [("0.0.0.0", 443), ("224.0.0.1", 443), ("localhost", 443),
+                           ("::1", 443), ("127.0.0.1", 0), ("127.0.0.1", 65536)]:
+            with self.subTest(host=host, port=port), self.assertRaises(LauncherError):
+                require_address(host, port)
+        require_address("127.0.0.1", 8443)
+
+    def test_external_config_rejects_repository_files_and_symlinks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            with self.assertRaises(LauncherError):
+                external_file(project, project.manage_py, "env")
+            link = project.root / "link"
+            link.symlink_to(project.manage_py)
+            with self.assertRaises(LauncherError):
+                external_file(project, link, "env")
+
+    @mock.patch("scripts.launcher.production.supervise")
+    @mock.patch("scripts.launcher.production.start")
+    @mock.patch("scripts.launcher.production.require_port")
+    @mock.patch("scripts.launcher.production.ensure_virtual_environment")
+    def test_production_uses_native_child_and_only_explicit_migration(self, venv, port, start, supervise):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = create_project(root / "source")
+            files = [root / name for name in ("production.env", "server.crt", "server.key")]
+            for path in files:
+                path.touch()
+            prod(project, host="127.0.0.1", port=8443, env_file=files[0],
+                 certificate_file=files[1], private_key_file=files[2], migrate=False)
+            command = start.call_args.args[0]
+            self.assertIn("config.native_runtime", command)
+            self.assertNotIn("--migrate", command)
+            self.assertNotIn("runserver", command)
+            self.assertEqual(start.call_args.kwargs["extra_env"]["DJANGO_SETTINGS_MODULE"], "config.settings.native")
+            supervise.assert_called_once_with([start.return_value], process_groups=True)
+
+    @mock.patch("scripts.launcher.production.start")
+    def test_check_cannot_apply_changes(self, start):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            with self.assertRaises(LauncherError):
+                prod(project, host="127.0.0.1", port=8443, env_file=Path("unused"),
+                     certificate_file=Path("unused"), private_key_file=Path("unused"),
+                     migrate=True, check_only=True)
+        start.assert_not_called()
 
 
 if __name__ == "__main__":

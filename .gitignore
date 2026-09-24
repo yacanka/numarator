@@ -11,3 +11,4 @@ frontend/node_modules/
 frontend/dist/
 offline/
 numarator-offline*.zip
+frontend/.native-build.json

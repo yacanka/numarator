@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -63,15 +64,18 @@ def run(
 
 
 def start(
-    command: Command, cwd: Path, *, extra_env: dict[str, str] | None = None
+    command: Command, cwd: Path, *, extra_env: dict[str, str] | None = None,
+    process_group: bool = False,
 ) -> subprocess.Popen:
     print(f"[start] {display(command)}\n        cwd: {cwd}", flush=True)
     return subprocess.Popen(
-        [str(part) for part in command], cwd=cwd, env=environment(extra_env)
+        [str(part) for part in command], cwd=cwd, env=environment(extra_env),
+        start_new_session=process_group and os.name != "nt",
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if process_group and os.name == "nt" else 0,
     )
 
 
-def supervise(processes: list[subprocess.Popen]) -> None:
+def supervise(processes: list[subprocess.Popen], *, process_groups: bool = False) -> None:
     try:
         while all(process.poll() is None for process in processes):
             time.sleep(0.25)
@@ -80,17 +84,31 @@ def supervise(processes: list[subprocess.Popen]) -> None:
     except KeyboardInterrupt:
         print("\nStopping services...")
     finally:
-        terminate(processes)
+        terminate(processes, process_groups=process_groups)
 
 
-def terminate(processes: Sequence[subprocess.Popen]) -> None:
+def terminate(processes: Sequence[subprocess.Popen], *, process_groups: bool = False) -> None:
     for process in processes:
-        if process.poll() is None:
-            process.terminate()
+        try:
+            if process_groups and os.name != "nt":
+                os.killpg(process.pid, signal.SIGTERM)
+            elif process.poll() is None:
+                if process_groups:
+                    process.send_signal(signal.CTRL_BREAK_EVENT)
+                else:
+                    process.terminate()
+        except ProcessLookupError:
+            pass
     for process in processes:
         if process.poll() is not None:
             continue
         try:
-            process.wait(timeout=5)
+            process.wait(timeout=15 if process_groups else 5)
         except subprocess.TimeoutExpired:
-            process.kill()
+            if process_groups and os.name != "nt":
+                os.killpg(process.pid, signal.SIGKILL)
+            elif process_groups:
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False)
+            else:
+                process.kill()
+            process.wait()

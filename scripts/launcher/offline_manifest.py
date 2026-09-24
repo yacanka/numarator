@@ -25,6 +25,7 @@ def write_offline_manifest(project: Project, scope: Scope, offline_dir: Path) ->
         "format_version": MANIFEST_VERSION,
         "commit": git_commit(project.root),
         "scope": {"backend": scope.backend, "frontend": scope.frontend},
+        "environment": project.environment,
         "target": target_metadata(),
         "toolchain": toolchain_metadata(scope),
         "locks": lock_metadata(project, scope),
@@ -50,6 +51,9 @@ def verify_offline_manifest(project: Project, scope: Scope, offline_dir: Path) -
         raise LauncherError(
             "offline dependencies were prepared for a different backend/frontend scope"
         )
+    # Old bundles predate native production and are development-only.
+    if manifest.get("environment", "development") != project.environment:
+        raise LauncherError("offline dependencies were prepared for a different environment")
     if manifest.get("target") != target_metadata():
         raise LauncherError(
             "offline dependencies target a different OS, architecture, or Python version"
