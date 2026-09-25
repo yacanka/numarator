@@ -90,6 +90,19 @@ Sunucuyu açmadan doğrulamak için aynı komuta `--check` ekleyin. Bu seçenek 
 uygulamaz, build veya collectstatic çalıştırmaz; log/kilit dosyaları oluşturabilir.
 `--check`, `--migrate` veya `--build-frontend` ile birlikte kullanılamaz.
 
+### Başlangıçta `No changes detected` ardından kapanma
+
+`No changes detected`, modeller için yeni migration dosyası gerekmediğini söyler;
+veritabanındaki migration'ların uygulanmış olduğunu göstermez. Eski launcher
+sürümlerinde bekleyen migration varsa Django açıklama yazmadan `code 1` ile
+kapanır. Güncel sürüm `Unapplied database migrations` mesajını gösterir.
+
+İlk kurulumda veya kontrollü güncellemede, mevcut veri varsa servis kapalıyken
+`NUMARATOR_DATA_DIR` yedeğini alın; aynı `prod` komutunu `--migrate` ekleyerek
+çalıştırın. Env dosyası ve veri dizini aynı kalmalıdır. Frontend elle
+`npm run build` ile üretildiyse ayrıca `--build-frontend` ekleyin. Sonraki normal
+açılışlarda bu iki seçeneği kaldırın.
+
 İlk yönetici hesabını oluşturmak için sunucuyu durdurup aynı native profil ile:
 
 ```powershell

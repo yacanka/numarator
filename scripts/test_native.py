@@ -9,6 +9,7 @@ import os
 import secrets
 import shutil
 import socket
+import sqlite3
 import ssl
 import subprocess
 import sys
@@ -191,6 +192,10 @@ class HTTPSIntegrationTests(unittest.TestCase):
             # Without explicit migration, startup must fail without applying the schema.
             pending = subprocess.run([*command, '--check'], cwd=backend, env=env, capture_output=True, text=True)
             self.assertNotEqual(pending.returncode, 0)
+            self.assertIn('Unapplied database migrations', pending.stderr)
+            self.assertIn('--migrate', pending.stderr)
+            with sqlite3.connect(root / 'data/numarator.sqlite3') as database:
+                self.assertEqual(database.execute('SELECT name FROM sqlite_master WHERE type = \'table\'').fetchall(), [])
             password = secrets.token_urlsafe(32)
             bootstrap = subprocess.run(
                 [sys.executable, 'manage.py', 'migrate', '--noinput'], cwd=backend, env=env,

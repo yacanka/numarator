@@ -25,7 +25,16 @@ def prepare(args, settings) -> None:
     verify_frontend(frontend)
     if args.migrate:
         call_command('migrate', interactive=False)
-    call_command('migrate', check_unapplied=True, interactive=False)
+    try:
+        call_command('migrate', check_unapplied=True, interactive=False)
+    except SystemExit as error:
+        # Django's migrate --check exits silently when migrations are pending.
+        if error.code != 1:
+            raise
+        raise CommandError(
+            'Unapplied database migrations; back up existing production data, then '
+            'rerun the same launcher.py prod command with --migrate'
+        ) from error
     if not args.check:
         call_command('collectstatic', interactive=False, verbosity=0)
 

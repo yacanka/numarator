@@ -9,6 +9,7 @@ import type {
 
 export interface DocumentFilters {
   format_id?: string
+  category?: number
   status?: string
   search?: string
   date_from?: string

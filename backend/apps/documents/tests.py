@@ -3,7 +3,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.documents.models import GeneratedDocument
-from apps.formats.models import DocumentFormat
+from apps.formats.models import DocumentFormat, FormatCategory
 
 
 class GeneratedDocumentModelTests(TestCase):
@@ -111,6 +111,45 @@ class GeneratedDocumentApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['pagination']['count'], 1)
         self.assertEqual(response.data['data'][0]['document_number'], 'API-1')
+
+    def test_list_filters_documents_by_format_category(self):
+        """Category filtering spans formats and combines with existing filters."""
+        category = FormatCategory.objects.create(name='Orders', code='ORDERS')
+        other_category = FormatCategory.objects.create(name='Invoices', code='INVOICES')
+        self.document_format.category = category
+        self.document_format.save(update_fields=['category'])
+        for code, format_category in [('SAME', category), ('OTHER', other_category), ('NONE', None)]:
+            document_format = DocumentFormat.objects.create(
+                code=code, name=code, category=format_category, created_by=self.user,
+            )
+            GeneratedDocument.objects.create(
+                format=document_format, document_number=f'{code}-1',
+                sequence_value=1, generated_by=self.user, status='used',
+                generated_at=timezone.now(),
+            )
+
+        cases = [
+            ({'category': category.id}, {'API-1', 'SAME-1'}),
+            ({'category': category.id, 'format_id': str(self.document_format.id)}, {'API-1'}),
+            ({'category': category.id, 'status': 'active', 'search': 'api'}, {'API-1'}),
+            ({'category': other_category.id, 'format_id': str(self.document_format.id)}, set()),
+            ({'category': 999999}, set()),
+            ({'category': ''}, {'API-1', 'SAME-1', 'OTHER-1', 'NONE-1'}),
+            ({}, {'API-1', 'SAME-1', 'OTHER-1', 'NONE-1'}),
+        ]
+        for filters, expected in cases:
+            with self.subTest(filters=filters):
+                response = self.client.get('/api/v1/documents/', filters)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data['pagination']['count'], len(expected))
+                self.assertEqual(
+                    {item['document_number'] for item in response.data['data']}, expected,
+                )
+
+    def test_list_rejects_invalid_category(self):
+        """Malformed category IDs must not silently disable the filter."""
+        response = self.client.get('/api/v1/documents/', {'category': 'invalid'})
+        self.assertEqual(response.status_code, 400)
 
     def test_update_status_marks_document_used(self):
         """Status endpoint updates status and usage timestamp."""
