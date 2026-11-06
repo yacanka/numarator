@@ -1,15 +1,22 @@
 from datetime import timedelta
+from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.db import close_old_connections, connection
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 from drf_spectacular.generators import SchemaGenerator
 
 from apps.documents.models import GeneratedDocument
 from apps.formats.models import DocumentFormat
+from apps.formats.engine.generator import DocumentNumberGenerator
 
 from .models import API_SCOPES, ApiCredential, IdempotencyRecord
+from .services import generate_idempotently
 
 
 @override_settings(CACHES={'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}})
@@ -366,6 +373,164 @@ class PrivateApiTests(TestCase):
         response = self.client.get('/api/private/v1/formats/', **self.auth_headers)
 
         self.assertEqual(response.status_code, 401)
+
+    def test_deleted_allowlisted_format_does_not_grant_access_to_other_formats(self):
+        self.credential.allowed_formats.set([self.document_format])
+        other_document = self.other_format.get_generator().generate(user=self.user)
+        self.document_format.delete()
+
+        formats = self.client.get('/api/private/v1/formats/', **self.auth_headers)
+        numbers = self.client.get('/api/private/v1/numbers/', **self.auth_headers)
+        generated = self.generate(format_code='INVOICE', context_data={})
+        changed = self.client.patch(
+            f'/api/private/v1/numbers/{other_document.pk}/status/',
+            {'status': 'used'}, format='json', **self.auth_headers,
+        )
+
+        self.assertEqual(formats.data['data'], [])
+        self.assertEqual(numbers.data['data'], [])
+        self.assertEqual(generated.status_code, 404)
+        self.assertEqual(changed.status_code, 404)
+        other_document.refresh_from_db()
+        self.assertEqual(other_document.status, 'active')
+
+    def test_mixed_deleted_and_live_allowlist_preserves_live_access(self):
+        self.credential.allowed_formats.set([self.document_format, self.other_format])
+        self.document_format.delete()
+        response = self.generate(format_code='INVOICE', context_data={})
+        self.assertEqual(response.status_code, 201)
+
+    def test_explicit_empty_allowlist_still_allows_new_formats(self):
+        self.credential.allowed_formats.clear()
+        response = self.generate(format_code='INVOICE', context_data={})
+        self.assertEqual(response.status_code, 201)
+
+    def test_deleted_allowlist_is_not_reported_as_all_formats(self):
+        from .serializers import ApiCredentialSerializer
+
+        self.credential.allowed_formats.set([self.document_format])
+        self.document_format.delete()
+        self.assertFalse(ApiCredentialSerializer(self.credential).data['all_formats'])
+
+    def test_replay_survives_new_required_context(self):
+        first = self.generate()
+        self.document_format.segments_config.append({
+            'type': 'context', 'order': 5, 'config': {'key': 'department'},
+        })
+        self.document_format.save(update_fields=['segments_config'])
+
+        replay = self.generate()
+        fresh = self.generate(idempotency_key='new-order')
+
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay['Idempotent-Replayed'], 'true')
+        self.assertEqual(replay.data['data']['id'], first.data['data']['id'])
+        self.assertEqual(fresh.status_code, 400)
+        self.assertEqual(GeneratedDocument.objects.count(), 1)
+
+    def test_replay_survives_archival_but_new_generation_is_rejected(self):
+        first = self.generate()
+        self.document_format.status = 'archived'
+        self.document_format.save(update_fields=['status'])
+
+        replay = self.generate()
+        fresh = self.generate(idempotency_key='new-order')
+
+        self.assertEqual(replay.status_code, 200)
+        self.assertEqual(replay.data['data']['id'], first.data['data']['id'])
+        self.assertEqual(fresh.status_code, 404)
+        self.assertEqual(IdempotencyRecord.objects.count(), 1)
+
+    def test_archived_replay_with_changed_payload_still_conflicts(self):
+        self.generate()
+        self.document_format.status = 'archived'
+        self.document_format.save(update_fields=['status'])
+        response = self.generate(context_data={'branch': 'ANK'})
+        self.assertEqual(response.status_code, 409)
+
+    def test_replay_does_not_bypass_current_format_permissions(self):
+        self.generate()
+        self.credential.allowed_formats.set([self.other_format])
+        self.assertEqual(self.generate().status_code, 404)
+
+    def test_replay_does_not_bypass_revocation_or_scopes(self):
+        self.generate()
+        self.credential.scopes = ['numbers:read']
+        self.credential.save(update_fields=['scopes'])
+        self.assertEqual(self.generate().status_code, 403)
+        self.credential.revoke()
+        self.assertEqual(self.generate().status_code, 401)
+
+
+class IdempotencyTransactionTests(TransactionTestCase):
+    def test_concurrent_retries_issue_one_document(self):
+        results = self._generate_concurrently(['same-request', 'same-request'])
+        self.assertEqual({item[0] for item in results}, {'0001'})
+        self.assertEqual(sorted(item[1] for item in results), [False, True])
+        self.assertEqual(GeneratedDocument.objects.count(), 1)
+        self.assertEqual(IdempotencyRecord.objects.count(), 1)
+
+    def test_concurrent_distinct_requests_issue_distinct_numbers(self):
+        results = self._generate_concurrently(['request-a', 'request-b'])
+        self.assertEqual({item[0] for item in results}, {'0001', '0002'})
+        self.assertEqual([item[1] for item in results], [False, False])
+        self.assertEqual(GeneratedDocument.objects.count(), 2)
+        self.assertEqual(IdempotencyRecord.objects.count(), 2)
+
+    def _generate_concurrently(self, keys):
+        user = get_user_model().objects.create_user('concurrent-owner')
+        document_format = DocumentFormat.objects.create(
+            code='CONCURRENT', name='Concurrent', status='active',
+            segments_config=[{'type': 'sequence', 'config': {'padding': 4}}],
+        )
+        credential, _ = ApiCredential.issue(owner=user, name='Concurrent client')
+        barrier = Barrier(len(keys))
+
+        def issue(key):
+            close_old_connections()
+            try:
+                barrier.wait(timeout=10)
+                document, replayed = generate_idempotently(
+                    credential=credential, idempotency_key=key,
+                    document_format=document_format, payload={'format_code': 'CONCURRENT'},
+                    user=user,
+                )
+                return document.document_number, replayed
+            finally:
+                close_old_connections()
+
+        with ThreadPoolExecutor(max_workers=len(keys)) as executor:
+            futures = [executor.submit(issue, key) for key in keys]
+            return [future.result(timeout=20) for future in futures]
+
+    def test_number_and_retry_record_commit_before_format_lock_release(self):
+        user = get_user_model().objects.create_user('transaction-owner')
+        document_format = DocumentFormat.objects.create(
+            code='ATOMIC', name='Atomic', status='active',
+            segments_config=[{'type': 'sequence', 'config': {'padding': 4}}],
+        )
+        credential, _ = ApiCredential.issue(owner=user, name='Transaction client')
+        lock_states = []
+        original_lock = DocumentNumberGenerator.generation_lock
+
+        @contextmanager
+        def observe_lock(generator):
+            lock_states.append(('acquire', connection.in_atomic_block))
+            with original_lock(generator):
+                yield
+                lock_states.append(('release', connection.in_atomic_block))
+                self.assertEqual(GeneratedDocument.objects.count(), 1)
+                self.assertIsNotNone(IdempotencyRecord.objects.get().document_id)
+
+        with patch.object(DocumentNumberGenerator, 'generation_lock', observe_lock):
+            document, replayed = generate_idempotently(
+                credential=credential, idempotency_key='atomic-request',
+                document_format=document_format, payload={'format_code': 'ATOMIC'}, user=user,
+            )
+
+        self.assertFalse(replayed)
+        self.assertEqual(document.document_number, '0001')
+        self.assertEqual(lock_states, [('acquire', False), ('release', False)])
 
 
 class PrivateApiSchemaTests(TestCase):

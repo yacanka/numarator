@@ -49,6 +49,10 @@ Oluşturma isteği örneği:
 
 `scopes` ve `allowed_formats` alanları bilinçsiz geniş yetki verilmesini önlemek için zorunludur. `allowed_formats: []` açıkça gönderilirse anahtar tüm aktif formatlara erişir. En az yetki ilkesi için production anahtarlarında bu listeyi format UUID'leriyle sınırlandırın.
 
+İzin verilen bir formatın silinmesi anahtarın erişimini genişletmez. Listedeki tüm
+formatlar silinmişse anahtar başka formatlara erişemez; bu durum açıkça verilen
+`allowed_formats: []` izninden farklıdır.
+
 Başarılı cevapta `data.api_key` alanı yalnızca bir kez döner:
 
 ```json
@@ -181,6 +185,12 @@ curl --fail-with-body -X POST \
 ```
 
 Aynı API anahtarı, aynı `Idempotency-Key` ve aynı gövdeyle yapılan tekrar aynı kaydı `200 OK` ve `Idempotent-Replayed: true` header'ıyla döndürür. Aynı idempotency anahtarının farklı bir gövdeyle kullanılması `409 Conflict` üretir. Timeout sonrasında yeni anahtar üretmeyin; aynı anahtarla isteği güvenle tekrarlayın.
+
+Başarılı üretimden sonra formatın arşivlenmesi veya zorunlu context alanlarının
+değişmesi kayıtlı sonucu tekrar almayı engellemez. Yeni üretim istekleri güncel
+format kurallarına tabidir. Tekrar istekleri de anahtarın güncel geçerlilik,
+scope ve format erişim kontrollerinden geçer; iptal edilmiş veya erişimi
+kaldırılmış bir anahtar eski sonucu alamaz.
 
 `context_data` yalnızca string, number ve boolean değer kabul eder ve en fazla 8 KiB olabilir. `metadata` geçerli JSON nesnesi olmalı ve en fazla 16 KiB olabilir. Parola, token veya gereksiz kişisel veri göndermeyin.
 

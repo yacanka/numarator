@@ -16,6 +16,7 @@ from .authentication import ApiKeyAuthentication
 from .exceptions import Conflict, GenerationFailed
 from .filters import PrivateGeneratedDocumentFilter
 from .permissions import HasApiScope
+from .models import IdempotencyRecord
 from .serializers import (
     PrivateFormatListResponseSerializer,
     PrivateFormatPreviewSerializer,
@@ -31,7 +32,7 @@ from .serializers import (
     PrivateNumberValidationSerializer,
     validate_required_format_context,
 )
-from .services import generate_idempotently
+from .services import generate_idempotently, validate_idempotency_payload
 from .throttles import ApiCredentialGenerateRateThrottle, ApiCredentialRateThrottle
 
 logger = logging.getLogger(__name__)
@@ -51,9 +52,7 @@ class PrivateApiViewSet(viewsets.GenericViewSet):
 
     def allowed_format_ids(self):
         if not hasattr(self, '_allowed_format_ids'):
-            self._allowed_format_ids = list(
-                self.request.auth.allowed_formats.values_list('pk', flat=True)
-            )
+            self._allowed_format_ids = self.request.auth.get_allowed_format_ids()
         return self._allowed_format_ids
 
     def restrict_formats(self, queryset, field_name='pk'):
@@ -202,6 +201,10 @@ class PrivateNumberViewSet(
         serializer = PrivateNumberCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         payload = serializer.validated_data
+        replay = self._get_authorized_replay(request.auth, idempotency_key, payload)
+        if replay is not None:
+            return self._generation_response(replay, replayed=True)
+
         try:
             document_format = self.restrict_formats(
                 DocumentFormat.objects.filter(status='active')
@@ -224,6 +227,23 @@ class PrivateNumberViewSet(
             logger.warning('Private API generation failed: %s', error, exc_info=True)
             raise GenerationFailed() from error
 
+        return self._generation_response(document, replayed)
+
+    def _get_authorized_replay(self, credential, idempotency_key, payload):
+        record = IdempotencyRecord.objects.select_related('document__format').filter(
+            credential=credential,
+            key=idempotency_key,
+        ).first()
+        if record is None:
+            return None
+        if record.document_id and not self.restrict_formats(
+            DocumentFormat.objects.all()
+        ).filter(pk=record.document.format_id).exists():
+            raise NotFound('Format not found or not allowed for this API key.')
+        validate_idempotency_payload(record, payload)
+        return record.document
+
+    def _generation_response(self, document, replayed):
         response = Response(
             {'success': True, 'data': self.get_serializer(document).data},
             status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,

@@ -52,7 +52,7 @@ class ApiCredentialSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.BooleanField())
     def get_all_formats(self, credential):
-        return not credential.allowed_formats.exists()
+        return not credential.get_allowed_format_ids()
 
 
 class ApiCredentialCreateSerializer(serializers.Serializer):

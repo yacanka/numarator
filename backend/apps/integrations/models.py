@@ -78,6 +78,17 @@ class ApiCredential(TimeStampedModel):
             return False
         return self.expires_at is None or self.expires_at > timezone.now()
 
+    def get_allowed_format_ids(self):
+        """Read explicit grants, including soft-deleted formats.
+
+        Only an actually empty relation grants access to every format. The
+        target model's default manager hides deleted formats and must not turn
+        an existing restriction into unrestricted access.
+        """
+        return list(self.allowed_formats.through.objects.filter(
+            apicredential_id=self.pk,
+        ).values_list('documentformat_id', flat=True))
+
     def revoke(self):
         """Permanently disable this credential."""
         if self.revoked_at is None:

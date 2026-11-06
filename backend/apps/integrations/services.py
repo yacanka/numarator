@@ -18,9 +18,28 @@ def request_digest(payload):
     return hashlib.sha256(canonical_payload.encode('utf-8')).hexdigest()
 
 
-@transaction.atomic
+def validate_idempotency_payload(record, payload):
+    """Reject reuse of a retry key for a different normalized request body."""
+    if record.request_hash != request_digest(payload):
+        raise Conflict('This Idempotency-Key was already used with a different request body.')
+
+
 def generate_idempotently(*, credential, idempotency_key, document_format, payload, user):
-    """Generate at most one number for one credential/key/payload tuple."""
+    """Commit the retry record and number before releasing the format lock."""
+    generator = document_format.get_generator()
+    # All generation paths take the format lock before database write locks.
+    with generator.generation_lock():
+        return _generate_idempotently(
+            credential=credential,
+            idempotency_key=idempotency_key,
+            generator=generator,
+            payload=payload,
+            user=user,
+        )
+
+
+@transaction.atomic
+def _generate_idempotently(*, credential, idempotency_key, generator, payload, user):
     payload_hash = request_digest(payload)
     created = False
     try:
@@ -37,12 +56,11 @@ def generate_idempotently(*, credential, idempotency_key, document_format, paylo
             key=idempotency_key,
         )
 
-    if record.request_hash != payload_hash:
-        raise Conflict('This Idempotency-Key was already used with a different request body.')
+    validate_idempotency_payload(record, payload)
     if record.document_id:
         return record.document, True
 
-    document = document_format.get_generator().generate(
+    document = generator.generate_locked(
         context_data=payload.get('context_data'),
         user=user,
         metadata=payload.get('metadata'),
