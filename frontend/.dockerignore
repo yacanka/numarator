@@ -1,0 +1,18 @@
+# Local env files, dependency trees and previous builds must never enter a build.
+*
+!package.json
+!package-lock.json
+!index.html
+!tsconfig.json
+!vite.config.ts
+!nginx.conf
+!src/
+!src/**
+!public/
+!public/**
+**/.env
+**/.env.*
+**/.npmrc
+**/*.key
+**/*.pem
+**/.DS_Store

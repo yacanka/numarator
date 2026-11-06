@@ -15,6 +15,9 @@ kurulumların `DB_NAME` ve `DB_USER` değerlerini değiştirmek gerekmez.
 
 Dış uygulama entegrasyonunun kimlik doğrulama, endpoint, idempotency, hata ve güvenlik ayrıntıları için [Özel API entegrasyon rehberine](docs/private-api.md) bakın.
 
+Django 5.2 LTS geçişi, mevcut kurulumlar ve offline paketlerin yenilenmesi için
+[yükseltme notlarına](docs/django-upgrade.md) bakın.
+
 ## Yerel geliştirme
 
 Backend kaynak kodu `backend/`, frontend kaynak kodu `frontend/` altında bulunur.
@@ -80,6 +83,8 @@ sunar. SQLite verisi repository dışında tutulur; mevcut Docker/PostgreSQL/Red
 profili korunur ve veriler otomatik taşınmaz. İlk kurulum, sertifika, yönetici
 hesabı, offline production ve yeniden başlatma adımları için
 [HTTPS launcher rehberine](docs/launcher-production.md) bakın.
+
+Mevcut Docker/PostgreSQL kurulumu için [Docker HTTPS production rehberine](docs/docker-production.md) bakın.
 
 ## Offline kurulum
 

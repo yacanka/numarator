@@ -46,21 +46,22 @@ services:
       - static_files:/app/staticfiles
       - media_files:/app/media
       - logs:/app/logs
-    command: >
-      sh -c "
+    command:
+      - /bin/sh
+      - -ec
+      - >-
         python manage.py migrate --no-input &&
         python manage.py collectstatic --no-input &&
-        gunicorn config.wsgi:application
-          --bind 0.0.0.0:8000
-          --workers 4
-          --worker-class gthread
-          --threads 4
-          --timeout 30
-          --max-requests 1000
-          --max-requests-jitter 100
-          --access-logfile -
-          --error-logfile -
-      "
+        exec gunicorn config.wsgi:application
+        --bind 0.0.0.0:8000
+        --workers 4
+        --worker-class gthread
+        --threads 4
+        --timeout 30
+        --max-requests 1000
+        --max-requests-jitter 100
+        --access-logfile -
+        --error-logfile -
 
   celery:
     build:

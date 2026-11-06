@@ -1,6 +1,6 @@
 # requirements/base.txt
-Django==4.2.10
-djangorestframework==3.14.0
+Django==5.2.19
+djangorestframework==3.16.1
 djangorestframework-simplejwt==5.3.1
 django-redis==5.4.0
 redis==5.0.1

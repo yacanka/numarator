@@ -18,8 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements/ ./requirements/
 RUN pip install --upgrade pip && pip install -r requirements/production.txt
 
-# Copy project
-COPY . .
+# Only application sources belong in the image; credentials and data are runtime inputs.
+COPY manage.py ./manage.py
+COPY config/ ./config/
+COPY apps/ ./apps/
 
 # Create dirs
 RUN mkdir -p /app/logs /app/staticfiles /app/media

@@ -1,0 +1,22 @@
+# Send only dependency manifests and application sources to the builder.
+*
+!requirements/
+!requirements/**
+!manage.py
+!config/
+!config/**
+!apps/
+!apps/**
+
+# Also exclude local artifacts accidentally placed inside a source directory.
+**/.env
+**/.env.*
+**/.dev-secret-key
+**/__pycache__
+**/*.py[cod]
+**/*.sqlite*
+**/*.db
+**/*.log
+**/*.key
+**/*.pem
+**/.DS_Store
