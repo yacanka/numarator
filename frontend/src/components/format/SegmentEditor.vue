@@ -103,20 +103,9 @@ function handleSave() {
             style="width: 100%"
           />
         </n-form-item>
-        <n-form-item v-if="localSegment.type === 'sequence'" label="Başlangıç Değeri">
-          <n-input-number
-            v-model:value="localSegment.config.start"
-            :min="0"
-            style="width: 100%"
-          />
-        </n-form-item>
-        <n-form-item v-if="localSegment.type === 'sequence'" label="Adım">
-          <n-input-number
-            v-model:value="localSegment.config.step"
-            :min="1"
-            style="width: 100%"
-          />
-        </n-form-item>
+        <n-text depth="3">
+          Başlangıç değeri ve adım, formatın Sıra Numarası Ayarları bölümünden belirlenir.
+        </n-text>
       </template>
 
       <!-- Random -->

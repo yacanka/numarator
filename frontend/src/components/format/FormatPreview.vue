@@ -1,6 +1,6 @@
 <!-- src/components/format/FormatPreview.vue -->
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, onBeforeUnmount } from 'vue'
 import { NCard, NText, NSpin, NTag, NSpace, NButton, NIcon } from 'naive-ui'
 import { RefreshOutline } from '@vicons/ionicons5'
 import { formatsApi } from '@/api/formats'
@@ -9,10 +9,13 @@ import type { SegmentConfig } from '@/types'
 const props = defineProps<{
   segments: SegmentConfig[]
   formatId?: string
+  draft?: boolean
+  sequenceStart?: number
 }>()
 
 const preview = ref('')
 const loading = ref(false)
+let latestPreviewRequest = 0
 
 const segmentColors: Record<string, string> = {
   static: '#595959',
@@ -26,7 +29,9 @@ const segmentColors: Record<string, string> = {
 }
 
 async function fetchPreview() {
-  if (!props.formatId) {
+  const requestId = ++latestPreviewRequest
+  if (props.draft || !props.formatId) {
+    loading.value = false
     preview.value = props.segments.map(buildLocalPreview).join('')
     return
   }
@@ -34,11 +39,11 @@ async function fetchPreview() {
   loading.value = true
   try {
     const res = await formatsApi.previewFormat(props.formatId)
-    preview.value = res.data.data.preview
+    if (requestId === latestPreviewRequest) preview.value = res.data.data.preview
   } catch {
-    preview.value = props.segments.map(buildLocalPreview).join('')
+    if (requestId === latestPreviewRequest) preview.value = props.segments.map(buildLocalPreview).join('')
   } finally {
-    loading.value = false
+    if (requestId === latestPreviewRequest) loading.value = false
   }
 }
 
@@ -47,8 +52,8 @@ function buildLocalPreview(seg: SegmentConfig): string {
   switch (seg.type) {
     case 'static': return config.value || 'TEXT'
     case 'date': return getDatePreview(config.format || 'YYYY')
-    case 'sequence': return '1'.padStart(config.padding || 4, '0')
-    case 'yearly_sequence': return '0001'
+    case 'sequence':
+    case 'yearly_sequence': return String(props.sequenceStart ?? 1).padStart(config.padding ?? 4, '0')
     case 'random': return 'X'.repeat(config.length || 6)
     case 'checksum': return 'C'
     case 'context': return `[${(config.key || 'CTX').toUpperCase()}]`
@@ -66,6 +71,7 @@ function getDatePreview(format: string): string {
     'DD': String(now.getDate()).padStart(2, '0'),
     'YYYYMMDD': `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`,
     'YYYYMM': `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`,
+    'DDMMYYYY': `${String(now.getDate()).padStart(2,'0')}${String(now.getMonth()+1).padStart(2,'0')}${now.getFullYear()}`,
     'Q': String(Math.ceil((now.getMonth() + 1) / 3)),
     'WW': String(getWeekNumber(now)).padStart(2, '0'),
   }
@@ -83,13 +89,23 @@ function getWeekNumber(date: Date): number {
 // Debounced watch
 let timer: ReturnType<typeof setTimeout>
 watch(
-  () => [props.segments, props.formatId],
+  () => [props.segments, props.formatId, props.draft, props.sequenceStart],
   () => {
     clearTimeout(timer)
+    latestPreviewRequest += 1
+    if (props.draft || !props.formatId) {
+      fetchPreview()
+      return
+    }
     timer = setTimeout(fetchPreview, 500)
   },
   { deep: true, immediate: true }
 )
+
+onBeforeUnmount(() => {
+  clearTimeout(timer)
+  latestPreviewRequest += 1
+})
 </script>
 
 <template>

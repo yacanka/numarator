@@ -1,5 +1,5 @@
 import { apiClient } from './client'
-import { formatsApi } from './formats'
+import { fetchAllFormats } from './formats'
 import type { ApiResponse, DocumentFormat } from '@/types'
 
 export interface ApiScope {
@@ -42,14 +42,5 @@ export const integrationsApi = {
 
 /** Load every page so format selection is not limited to the first 100 entries. */
 export async function fetchActiveFormats(): Promise<DocumentFormat[]> {
-  const formats: DocumentFormat[] = []
-  let page = 1
-  let totalPages = 1
-  do {
-    const response = await formatsApi.getFormats({ status: 'active', page, page_size: 100 })
-    formats.push(...response.data.data)
-    totalPages = response.data.pagination.total_pages
-    page += 1
-  } while (page <= totalPages)
-  return formats
+  return fetchAllFormats({ status: 'active' })
 }

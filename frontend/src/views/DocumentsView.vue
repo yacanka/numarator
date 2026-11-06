@@ -57,7 +57,7 @@ const columns: DataTableColumns<GeneratedDocument> = [
 
 onMounted(async () => {
   formatsStore.fetchCategories().catch(() => message.error('Format kategorileri alınamadı'))
-  await formatsStore.fetchFormats()
+  await formatsStore.fetchAllFormats()
   await fetchDocuments()
 })
 
@@ -169,7 +169,8 @@ async function handleStatusChange(row: GeneratedDocument, nextStatus: GeneratedD
   updatingStatusIds.value = [...updatingStatusIds.value, row.id]
   try {
     const response = await documentsApi.updateStatus(row.id, nextStatus)
-    replaceDocument(response.data.data)
+    applyDocumentUpdate(response.data.data)
+    await fetchDocuments()
     message.success('Durum güncellendi')
   } catch (err: any) {
     message.error(err.response?.data?.error?.message || 'Durum güncellenemedi')
@@ -178,9 +179,19 @@ async function handleStatusChange(row: GeneratedDocument, nextStatus: GeneratedD
   }
 }
 
-function replaceDocument(updatedDocument: GeneratedDocument) {
+function applyDocumentUpdate(updatedDocument: GeneratedDocument) {
   const index = documents.value.findIndex((item) => item.id === updatedDocument.id)
-  if (index !== -1) documents.value[index] = updatedDocument
+  if (index === -1) return
+
+  if (statusFilter.value !== 'all' && updatedDocument.status !== statusFilter.value) {
+    documents.value.splice(index, 1)
+    pagination.value.itemCount = Math.max(0, pagination.value.itemCount - 1)
+    const lastPage = Math.max(1, Math.ceil(pagination.value.itemCount / pagination.value.pageSize))
+    pagination.value.page = Math.min(pagination.value.page, lastPage)
+    return
+  }
+
+  documents.value[index] = updatedDocument
 }
 
 </script>

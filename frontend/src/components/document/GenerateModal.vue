@@ -1,6 +1,6 @@
 <!-- src/components/document/GenerateModal.vue -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import {
   NModal, NButton, NSpace, NText, NInput,
   NForm, NFormItem, NInputNumber, NTag, NDivider,
@@ -29,6 +29,18 @@ const loading = ref(false)
 const count = ref(1)
 const contextData = ref<Record<string, string>>({})
 const generatedDocs = ref<GeneratedDocument[]>([])
+let generationVersion = 0
+
+watch(() => [props.show, props.format.id], resetGeneration, { flush: 'sync' })
+onBeforeUnmount(resetGeneration)
+
+function resetGeneration() {
+  generationVersion += 1
+  generatedDocs.value = []
+  contextData.value = {}
+  count.value = 1
+  loading.value = false
+}
 
 // Extract context keys from format segments. List payloads may omit segments_config,
 // so the modal must stay render-safe until the detail payload is available.
@@ -45,21 +57,27 @@ const contextKeys = computed(() => {
 })
 
 async function generate() {
+  if (loading.value || !props.show) return
+  const requestVersion = ++generationVersion
   loading.value = true
   try {
     const result = await store.generateNumber(props.format.id, {
       count: count.value,
-      context_data: contextData.value,
+      context_data: { ...contextData.value },
     })
 
+    // Closing or switching the modal must not restore another generation session's results.
+    if (requestVersion !== generationVersion) return
     generatedDocs.value = Array.isArray(result) ? result : [result]
     emit('generated', generatedDocs.value)
 
     message.success(`${generatedDocs.value.length} numara oluşturuldu!`)
   } catch (err: any) {
-    message.error(err.response?.data?.error?.message || 'Oluşturma hatası')
+    if (requestVersion === generationVersion) {
+      message.error(err.response?.data?.error?.message || 'Oluşturma hatası')
+    }
   } finally {
-    loading.value = false
+    if (requestVersion === generationVersion) loading.value = false
   }
 }
 
@@ -74,10 +92,16 @@ async function copyOne(number: string) {
   message.success('Kopyalandı!')
 }
 
+function csvCell(value: string) {
+  // Quoting preserves CSV structure; a text prefix also prevents spreadsheet formulas.
+  const text = /^[\s]*[=+\-@]|^[\t\r\n]/.test(value) ? `'${value}` : value
+  return `"${text.replace(/"/g, '""')}"`
+}
+
 function downloadCSV() {
   const csv = 'Document Number,Status,Generated At\n' +
     generatedDocs.value.map((d) =>
-      `${d.document_number},${d.status},${d.generated_at}`
+      [d.document_number, d.status, d.generated_at].map(csvCell).join(',')
     ).join('\n')
 
   const blob = new Blob([csv], { type: 'text/csv' })
@@ -90,22 +114,25 @@ function downloadCSV() {
 }
 
 function openDocumentsPage() {
-  emit('update:show', false)
+  handleClose()
   router.push({ path: '/documents', query: { format_id: props.format.id } })
 }
 
 function handleClose() {
-  generatedDocs.value = []
-  contextData.value = {}
-  count.value = 1
+  resetGeneration()
   emit('update:show', false)
+}
+
+function handleVisibilityChange(show: boolean) {
+  if (!show) handleClose()
+  else emit('update:show', true)
 }
 </script>
 
 <template>
   <n-modal
     :show="show"
-    @update:show="emit('update:show', $event)"
+    @update:show="handleVisibilityChange"
     preset="card"
     style="width: 640px"
     :mask-closable="false"

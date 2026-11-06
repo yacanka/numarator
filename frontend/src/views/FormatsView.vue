@@ -43,7 +43,7 @@ const categoryOptions = computed(() => [
 
 onMounted(async () => {
   await Promise.all([
-    store.fetchFormats(),
+    store.fetchAllFormats(),
     store.fetchCategories(),
   ])
 })
@@ -91,7 +91,7 @@ function closeGenerateModal(value: boolean) {
 }
 
 async function handleGenerated() {
-  await store.fetchFormats()
+  await store.fetchAllFormats()
 }
 
 function getFormatActions(format: DocumentFormat) {

@@ -40,7 +40,7 @@ export const documentsApi = {
     }),
 
   validateNumber: (number: string) =>
-    apiClient.get<ApiResponse<any>>(`/documents/validate/${number}/`),
+    apiClient.get<ApiResponse<any>>('/documents/validate/', { params: { number } }),
 
   getStats: () =>
     apiClient.get<ApiResponse<DocumentStats>>('/documents/stats/'),

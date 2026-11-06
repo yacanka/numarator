@@ -87,3 +87,19 @@ export const formatsApi = {
   getStats: () =>
     apiClient.get<ApiResponse<DashboardStats>>('/formats/stats/'),
 }
+
+/** Load every page for views and selectors that filter the full format collection locally. */
+export async function fetchAllFormats(
+  filters: Omit<FormatFilters, 'page' | 'page_size'> = {}
+): Promise<DocumentFormat[]> {
+  const formats: DocumentFormat[] = []
+  let page = 1
+  let totalPages = 1
+  do {
+    const response = await formatsApi.getFormats({ ...filters, page, page_size: 100 })
+    formats.push(...response.data.data)
+    totalPages = response.data.pagination.total_pages
+    page += 1
+  } while (page <= totalPages)
+  return formats
+}

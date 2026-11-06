@@ -1,6 +1,6 @@
 <!-- src/views/FormatBuilderView.vue -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import {
   NCard, NSpace, NGrid, NGi, NButton, NInput, NForm,
@@ -31,6 +31,7 @@ const segments = ref<SegmentConfig[]>([])
 const editingSegmentIndex = ref<number | null>(null)
 const showSegmentEditor = ref(false)
 const newCategoryName = ref('')
+let latestFormatLoad = 0
 
 const statusOptions = [
   { label: 'Taslak', value: 'draft' },
@@ -61,6 +62,7 @@ const formRules = {
 }
 
 onMounted(loadReferenceData)
+onBeforeUnmount(() => { latestFormatLoad += 1 })
 
 watch(
   () => route.params.id,
@@ -89,22 +91,27 @@ async function loadReferenceData() {
 }
 
 async function loadFormat() {
+  const loadId = ++latestFormatLoad
+  const formatId = route.params.id as string | undefined
   generatedNumber.value = ''
   closeSegmentEditor()
+  resetBuilder()
 
-  if (!isEdit.value) {
-    resetBuilder()
+  if (!formatId) {
+    loading.value = false
     return
   }
 
   loading.value = true
   try {
-    const loadedFormat = await store.fetchFormat(route.params.id as string)
-    applyLoadedFormat(loadedFormat)
+    const loadedFormat = await store.fetchFormat(formatId)
+    if (loadId === latestFormatLoad) applyLoadedFormat(loadedFormat)
   } catch (err: any) {
-    message.error(err.response?.data?.error?.message || 'Format detayları alınamadı')
+    if (loadId === latestFormatLoad) {
+      message.error(err.response?.data?.error?.message || 'Format detayları alınamadı')
+    }
   } finally {
-    loading.value = false
+    if (loadId === latestFormatLoad) loading.value = false
   }
 }
 
@@ -405,7 +412,7 @@ function handleBack() {
         </n-gi>
 
         <n-gi span="3 l:2">
-          <format-preview :segments="segments" :format-id="isEdit ? (route.params.id as string) : undefined" />
+          <format-preview :segments="segments" :draft="true" :sequence-start="form.sequence_start" :format-id="isEdit ? (route.params.id as string) : undefined" />
 
           <n-card title="Segment Yapısı" size="small" style="margin-top: 16px">
             <template #header-extra>

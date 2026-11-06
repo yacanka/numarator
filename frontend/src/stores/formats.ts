@@ -1,7 +1,7 @@
 // src/stores/formats.ts
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { formatsApi } from '@/api/formats'
+import { formatsApi, fetchAllFormats as fetchAllFormatPages } from '@/api/formats'
 import type { ApiResponse, DocumentFormat, FormatCategory, SegmentTypeInfo } from '@/types'
 
 export const useFormatsStore = defineStore('formats', () => {
@@ -27,6 +27,15 @@ export const useFormatsStore = defineStore('formats', () => {
       const response = await formatsApi.getFormats(filters)
       formats.value = response.data.data
       pagination.value = response.data.pagination
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchAllFormats() {
+    loading.value = true
+    try {
+      formats.value = await fetchAllFormatPages()
     } finally {
       loading.value = false
     }
@@ -110,7 +119,7 @@ export const useFormatsStore = defineStore('formats', () => {
   return {
     formats, categories, segmentTypes, currentFormat,
     loading, pagination, activeFormats,
-    fetchFormats, fetchFormat, fetchCategories, fetchSegmentTypes,
+    fetchFormats, fetchAllFormats, fetchFormat, fetchCategories, fetchSegmentTypes,
     createCategory, createFormat, updateFormat, deleteFormat,
     generateNumber, activateFormat, deactivateFormat, duplicateFormat,
   }
