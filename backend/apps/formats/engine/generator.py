@@ -4,8 +4,11 @@ from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
 
 from django.core.cache import cache
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
+from redis.exceptions import LockNotOwnedError
+
+from apps.core.exceptions import DuplicateNumberError
 
 from .segments import BaseSegment, ChecksumSegment, SegmentConfig, get_segment_class
 
@@ -35,14 +38,32 @@ class DocumentNumberGenerator:
         external_reference: str = '',
     ) -> 'GeneratedDocument':
         """Generate and persist one unique document number."""
-        with self._generation_lock():
-            return self._generate_with_retries(
+        with self.generation_lock():
+            return self.generate_locked(
                 context_data,
                 user,
                 metadata,
                 source_credential,
                 external_reference,
             )
+
+    @transaction.atomic
+    def generate_locked(
+        self,
+        context_data: Optional[Dict[str, Any]] = None,
+        user=None,
+        metadata: Optional[Dict[str, Any]] = None,
+        source_credential=None,
+        external_reference: str = '',
+    ) -> 'GeneratedDocument':
+        """Generate inside a caller-held generation_lock and database transaction.
+
+        Coordinators must acquire the format lock before opening their outer
+        transaction and keep it until commit, including idempotency writes.
+        """
+        return self._generate_with_retries(
+            context_data, user, metadata, source_credential, external_reference,
+        )
 
     def preview(self, context_data: Optional[Dict[str, Any]] = None) -> str:
         """Render a non-persistent preview using the sequence start value."""
@@ -56,10 +77,14 @@ class DocumentNumberGenerator:
         user=None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> List['GeneratedDocument']:
-        """Generate multiple document numbers within the configured limit."""
+        """Generate a batch atomically, rolling back every item on failure."""
         if count > 1000:
             raise ValueError('Bulk generate limit is 1000')
-        return [self.generate(context_data, user, metadata) for _ in range(count)]
+        with self.generation_lock(), transaction.atomic():
+            return [
+                self._generate_with_retries(context_data, user, metadata, None, '')
+                for _ in range(count)
+            ]
 
     def _build_segments(self) -> List[BaseSegment]:
         segments = []
@@ -74,7 +99,8 @@ class DocumentNumberGenerator:
         return int(segment_config.get('order', 0))
 
     @contextmanager
-    def _generation_lock(self):
+    def generation_lock(self):
+        """Serialize a format's generation before starting a transaction."""
         lock_key = f'{self.LOCK_PREFIX}{self.format.id}'
         lock = getattr(cache, 'lock', lambda *args, **kwargs: None)(lock_key, self.LOCK_TIMEOUT)
         if lock:
@@ -92,7 +118,13 @@ class DocumentNumberGenerator:
         try:
             yield
         finally:
-            lock.release()
+            try:
+                lock.release()
+            except LockNotOwnedError:
+                # Database row locks and uniqueness still protect generation.
+                # An expired lease must not turn a committed result into an
+                # apparent failure, or replace the exception that rolled it back.
+                logger.warning('Document generation lock lease expired for format=%s', self.format.id)
 
     @contextmanager
     def _thread_lock(self, lock_key: str):
@@ -118,11 +150,10 @@ class DocumentNumberGenerator:
                     source_credential,
                     external_reference,
                 )
-            except IntegrityError:
+            except DuplicateNumberError:
                 logger.warning('Duplicate document number retry=%s', attempt + 1)
         raise RuntimeError('Could not generate a unique document number')
 
-    @transaction.atomic
     def _generate_internal(
         self,
         context_data,
@@ -138,17 +169,40 @@ class DocumentNumberGenerator:
         context = self._build_context(now, sequence_value, context_data, user)
         document_number = self._render_number(context)
         self._validate_document_number(document_number)
-        return GeneratedDocument.objects.create(
-            format=self.format,
-            document_number=document_number,
-            sequence_value=sequence_value,
-            context_data=context_data or {},
-            generated_by=user,
-            generated_at=now,
-            metadata=metadata or {},
-            source_credential=source_credential,
-            external_reference=external_reference,
-        )
+        try:
+            # Roll back only this insert on a collision. Keep the candidate's
+            # counter increment so the next attempt can use a different number.
+            with transaction.atomic():
+                return GeneratedDocument.objects.create(
+                    format=self.format,
+                    document_number=document_number,
+                    sequence_value=sequence_value,
+                    context_data=context_data or {},
+                    generated_by=user,
+                    generated_at=now,
+                    metadata=metadata or {},
+                    source_credential=source_credential,
+                    external_reference=external_reference,
+                )
+        except IntegrityError as error:
+            if self._is_number_collision(error, GeneratedDocument):
+                raise DuplicateNumberError() from error
+            raise
+
+    @staticmethod
+    def _is_number_collision(error, document_model) -> bool:
+        """Retry only the document-number unique constraint, not other failures."""
+        table = document_model._meta.db_table
+        cause = error.__cause__
+        if connection.vendor == 'sqlite':
+            return str(cause) == f'UNIQUE constraint failed: {table}.document_number'
+        constraint_name = getattr(getattr(cause, 'diag', None), 'constraint_name', None)
+        if not constraint_name:
+            return False
+        with connection.cursor() as cursor:
+            constraints = connection.introspection.get_constraints(cursor, table)
+        constraint = constraints.get(constraint_name, {})
+        return constraint.get('unique', False) and constraint.get('columns') == ['document_number']
 
     def _build_context(self, now, sequence_value, context_data=None, user=None) -> Dict[str, Any]:
         return {
@@ -196,7 +250,8 @@ class DocumentNumberGenerator:
             'step': self.format.sequence_step,
         }
 
-    def _get_period_key(self, now, reset_period: str) -> str:
+    @staticmethod
+    def _get_period_key(now, reset_period: str) -> str:
         local_now = timezone.localtime(now)
         period_map = {
             'never': 'ALL',

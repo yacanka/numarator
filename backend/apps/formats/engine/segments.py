@@ -62,7 +62,7 @@ class StaticSegment(BaseSegment):
 
 class DateSegment(BaseSegment):
     segment_type, label, description, icon = 'date', 'Date', 'Date based value', 'calendar'
-    formats = {'YYYY': '%Y', 'YY': '%y', 'MM': '%m', 'DD': '%d', 'YYYYMMDD': '%Y%m%d', 'YYYYMM': '%Y%m', 'Q': 'Q', 'WW': '%W'}
+    formats = {'YYYY': '%Y', 'YY': '%y', 'MM': '%m', 'DD': '%d', 'YYYYMMDD': '%Y%m%d', 'DDMMYYYY': '%d%m%Y', 'YYYYMM': '%Y%m', 'Q': 'Q', 'WW': '%W'}
 
     def validate_config(self) -> None:
         if self.config.get('format', 'YYYY') not in self.formats:
@@ -144,8 +144,12 @@ class ContextSegment(BaseSegment):
     segment_type, label, description, icon = 'context', 'Context', 'Dynamic context value', 'tag'
 
     def validate_config(self) -> None:
-        if not self.config.get('key'):
-            raise ValueError("Context segment requires 'key'")
+        key = self.config.get('key')
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError("Context segment requires a nonempty string 'key'")
+        max_length = self.config.get('max_length', 10)
+        if type(max_length) is not int or max_length < 1:
+            raise ValueError('Context max_length must be a positive integer')
 
     def generate(self, context: Dict[str, Any]) -> str:
         """Return the configured context value normalized to uppercase."""

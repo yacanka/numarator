@@ -50,7 +50,15 @@ class DocumentFormatListSerializer(serializers.ModelSerializer):
     category_name = serializers.CharField(source='category.name', read_only=True)
     category_color = serializers.CharField(source='category.color', read_only=True)
     total_generated = serializers.IntegerField(read_only=True)
-    preview = serializers.CharField(read_only=True, source='generate_preview')
+    preview = serializers.SerializerMethodField()
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_preview(self, obj):
+        """Keep historical invalid segment data from hiding the format list."""
+        try:
+            return obj.generate_preview()
+        except (TypeError, ValueError, AttributeError):
+            return None
 
     class Meta:
         model = DocumentFormat
@@ -96,8 +104,7 @@ class DocumentFormatDetailSerializer(serializers.ModelSerializer):
         from .engine.generator import DocumentNumberGenerator
         from .models import FormatSequence
 
-        gen = DocumentNumberGenerator(obj)
-        period_key = gen._get_period_key(timezone.now(), obj.sequence_reset_period)
+        period_key = DocumentNumberGenerator._get_period_key(timezone.now(), obj.sequence_reset_period)
 
         seq = FormatSequence.objects.filter(
             format=obj,

@@ -33,6 +33,10 @@ class DocumentStatusUpdateSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
 
+class DocumentNumberValidationSerializer(serializers.Serializer):
+    number = serializers.CharField(max_length=200, trim_whitespace=False)
+
+
 class DocumentStatsSerializer(serializers.Serializer):
     total_generated = serializers.IntegerField()
     active_count = serializers.IntegerField()

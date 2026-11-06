@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
+from django.core.management import call_command
+from io import StringIO
 
 from apps.documents.models import GeneratedDocument
 from apps.formats.models import DocumentFormat, FormatCategory
@@ -173,3 +175,42 @@ class GeneratedDocumentApiTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    def test_legacy_validation_reports_lifecycle_validity(self):
+        for document_status, expected_valid in [
+            ('active', True), ('cancelled', False), ('used', False), ('expired', False),
+        ]:
+            with self.subTest(status=document_status):
+                self.document.change_status(document_status)
+                response = self.client.get('/api/v1/documents/validate/API-1/')
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data['data']['valid'], expected_valid)
+                self.assertTrue(response.data['data']['exists'])
+
+    def test_query_validation_accepts_all_supported_separators(self):
+        for number in ['API/1', 'API.1', 'API\\1', 'API|1', 'API:1', 'API_1', 'API-1']:
+            with self.subTest(number=number):
+                self.document.document_number = number
+                self.document.save(update_fields=['document_number'])
+                response = self.client.get('/api/v1/documents/validate/', {'number': number})
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.data['data']['valid'])
+                self.assertEqual(response.data['data']['document']['document_number'], number)
+
+    def test_query_validation_reports_missing_number(self):
+        response = self.client.get('/api/v1/documents/validate/', {'number': 'MISSING/1'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['data'], {'exists': False, 'valid': False})
+
+    def test_query_validation_requires_nonempty_bounded_number(self):
+        for params in [{}, {'number': ''}, {'number': 'x' * 201}]:
+            with self.subTest(params=params):
+                response = self.client.get('/api/v1/documents/validate/', params)
+                self.assertEqual(response.status_code, 400)
+
+
+class DocumentSchemaTests(TestCase):
+    def test_validation_routes_do_not_block_production_schema_checks(self):
+        # Native startup treats schema warnings as errors, including colliding
+        # operation IDs for the legacy and query-based validation routes.
+        call_command('spectacular', fail_on_warn=True, stdout=StringIO(), stderr=StringIO())

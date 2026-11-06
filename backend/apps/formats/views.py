@@ -1,5 +1,6 @@
 # apps/formats/views.py
 import logging
+from itertools import count
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -149,6 +150,7 @@ class DocumentFormatViewSet(viewsets.ModelViewSet):
                     count=count,
                     context_data=serializer.validated_data.get('context_data'),
                     user=request.user,
+                    metadata=serializer.validated_data.get('metadata'),
                 )
                 return Response({
                     'success': True,
@@ -195,20 +197,32 @@ class DocumentFormatViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='duplicate')
     def duplicate(self, request, pk=None):
         fmt = self.get_object()
-        new_fmt = DocumentFormat.objects.create(
-            code=f"{fmt.code}_COPY",
-            name=f"{fmt.name} (Kopya)",
-            description=fmt.description,
-            segments_config=fmt.segments_config,
-            sequence_reset_period=fmt.sequence_reset_period,
-            sequence_start=fmt.sequence_start,
-            sequence_step=fmt.sequence_step,
-            validation_regex=fmt.validation_regex,
-            category=fmt.category,
-            tags=fmt.tags,
-            created_by=request.user,
-            status='draft',
-        )
+        code_limit = DocumentFormat._meta.get_field('code').max_length
+        name_limit = DocumentFormat._meta.get_field('name').max_length
+        name_suffix = ' (Kopya)'
+        copied_values = {
+            'name': f'{fmt.name[:name_limit - len(name_suffix)]}{name_suffix}',
+            'description': fmt.description,
+            'segments_config': fmt.segments_config,
+            'sequence_reset_period': fmt.sequence_reset_period,
+            'sequence_start': fmt.sequence_start,
+            'sequence_step': fmt.sequence_step,
+            'validation_regex': fmt.validation_regex,
+            'category': fmt.category,
+            'tags': fmt.tags,
+            'created_by': request.user,
+            'status': 'draft',
+        }
+        for copy_number in count(1):
+            suffix = '_COPY' if copy_number == 1 else f'_COPY_{copy_number}'
+            code = f'{fmt.code[:code_limit - len(suffix)]}{suffix}'
+            # Deleted formats retain their unique codes. get_or_create also
+            # handles another request claiming the same candidate concurrently.
+            new_fmt, created = DocumentFormat.all_objects.get_or_create(
+                code=code, defaults=copied_values,
+            )
+            if created:
+                break
         serializer = DocumentFormatDetailSerializer(new_fmt, context={'request': request})
         return Response(
             {'success': True, 'data': serializer.data},

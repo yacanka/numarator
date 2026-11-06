@@ -12,6 +12,7 @@ from .serializers import (
     GeneratedDocumentSerializer,
     CancelDocumentSerializer,
     DocumentStatusUpdateSerializer,
+    DocumentNumberValidationSerializer,
     DocumentStatsSerializer,
 )
 from .filters import GeneratedDocumentFilter
@@ -97,12 +98,26 @@ class GeneratedDocumentViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=False, methods=['get'], url_path='validate/(?P<number>[^/.]+)')
     def validate_number(self, request, number=None):
         """Validate if a document number exists and is active"""
+        return self._number_validation_response(number)
+
+    @extend_schema(
+        operation_id='documents_validate_query',
+        parameters=[DocumentNumberValidationSerializer],
+    )
+    @action(detail=False, methods=['get'], url_path='validate')
+    def validate_query(self, request):
+        """Validate a number containing separators without URL path ambiguity."""
+        serializer = DocumentNumberValidationSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        return self._number_validation_response(serializer.validated_data['number'])
+
+    def _number_validation_response(self, number):
         try:
             doc = GeneratedDocument.objects.get(document_number=number)
             return Response({
                 'success': True,
                 'data': {
-                    'valid': True,
+                    'valid': doc.is_valid,
                     'exists': True,
                     'status': doc.status,
                     'document': GeneratedDocumentSerializer(doc).data,
