@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import socket
+from typing import Callable
 
 from .dependencies import ensure_virtual_environment
 from .model import LauncherError, Project, Scope
-from .process import required_tool, run, start, supervise
+from .process import required_tool, run, start, supervise, terminate
 
 DJANGO_ENV = {"DJANGO_SETTINGS_MODULE": "config.settings.development"}
 
@@ -30,7 +31,9 @@ def test(project: Project, scope: Scope) -> None:
         ensure_virtual_environment(project, create=False)
         django(project, ["test"])
         run(
-            [project.python, "-m", "unittest", "scripts.test_launcher"],
+            [project.python, "-m", "unittest", "scripts.test_launcher", "scripts.test_quickstart",
+             "scripts.test_production_prepare", "scripts.test_runtime", "scripts.test_windows_entrypoints",
+             "scripts.test_windows_process", "scripts.test_readiness_chain"],
             project.root,
         )
     if scope.frontend:
@@ -41,44 +44,53 @@ def test(project: Project, scope: Scope) -> None:
 def dev(
     project: Project, scope: Scope, *, migrate: bool, no_backend_reload: bool,
     backend_port: int = 8000, frontend_port: int = 5173,
+    ready: Callable[[], bool] | None = None,
 ) -> None:
     scope.require_any()
     require_runtime_ports(scope, backend_port, frontend_port)
     processes = []
-    if scope.backend:
-        ensure_virtual_environment(project, create=False)
-        if migrate:
-            django(project, ["migrate", "--no-input"])
-        command = [project.python, "manage.py", "runserver", f"127.0.0.1:{backend_port}"]
-        if no_backend_reload:
-            command.append("--noreload")
-        processes.append(start(command, project.backend, extra_env={
-            **DJANGO_ENV, "DEV_FRONTEND_PORT": str(frontend_port),
-        }))
-    if scope.frontend:
-        require_npm_script(project, "dev")
-        processes.append(
-            start(
-                [
-                    required_tool("npm"),
-                    "run",
-                    "dev",
-                    "--",
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(frontend_port),
-                    "--strictPort",
-                ],
-                project.frontend,
-                extra_env={
-                    "NUMARATOR_DEV_BACKEND_URL": f"http://127.0.0.1:{backend_port}",
-                    "VITE_CSRF_COOKIE_NAME": "dn_csrftoken",
-                },
+    try:
+        if scope.backend:
+            ensure_virtual_environment(project, create=False)
+            if migrate:
+                django(project, ["migrate", "--no-input"])
+            command = [project.python, "manage.py", "runserver", f"127.0.0.1:{backend_port}"]
+            if no_backend_reload:
+                command.append("--noreload")
+            processes.append(start(command, project.backend, extra_env={
+                **DJANGO_ENV, "DEV_FRONTEND_PORT": str(frontend_port),
+            }, process_group=True))
+        if scope.frontend:
+            require_npm_script(project, "dev")
+            processes.append(
+                start(
+                    [
+                        required_tool("npm"),
+                        "run",
+                        "dev",
+                        "--",
+                        "--host",
+                        "127.0.0.1",
+                        "--port",
+                        str(frontend_port),
+                        "--strictPort",
+                    ],
+                    project.frontend,
+                    extra_env={
+                        "NUMARATOR_DEV_BACKEND_URL": f"http://127.0.0.1:{backend_port}",
+                        "VITE_CSRF_COOKIE_NAME": "dn_csrftoken",
+                    },
+                    process_group=True,
+                )
             )
-        )
-    print_urls(scope, backend_port, frontend_port)
-    supervise(processes)
+        print_urls(scope, backend_port, frontend_port)
+    except BaseException:
+        terminate(processes, process_groups=True)
+        raise
+    if ready is None:
+        supervise(processes, process_groups=True)
+    else:
+        supervise(processes, process_groups=True, ready=ready)
 
 
 def django(project: Project, arguments: list[str]) -> None:

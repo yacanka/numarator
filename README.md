@@ -18,6 +18,22 @@ Dış uygulama entegrasyonunun kimlik doğrulama, endpoint, idempotency, hata ve
 Django 5.2 LTS geçişi, mevcut kurulumlar ve offline paketlerin yenilenmesi için
 [yükseltme notlarına](docs/django-upgrade.md) bakın.
 
+## Windows'ta hızlı başlangıç
+
+Python 3.11+, Node.js 20+ ve npm kurulu, internet erişimi olan bir bilgisayarda
+proje kökündeki `start-local.bat` dosyasına çift tıklayarak yerel geliştirmeyi;
+`start-prod.bat` dosyasına çift tıklayarak native SQLite ile HTTPS production'ı
+başlatabilirsiniz. İlk kurulum gerekli bağımlılıkları hazırlar ve yönetici hesabı
+için yönlendirir; tarayıcı servisler doğrulandıktan sonra açılır.
+
+Yerel varsayılan portlar API için `8000`, arayüz için `5173`'tür;
+`start-local.bat --configure` ile değiştirilebilir. Production ilk açılışta IPv4,
+port (varsayılan `443`) ve harici PEM TLS sertifika/anahtar yollarını ister.
+Env ve production verileri `%LOCALAPPDATA%\Numarator` altında korunur.
+Normal production açılışı kurulum, derleme veya migration yapmaz; güncellemede
+servisi durdurup mevcut veriyi yedekledikten sonra `start-prod.bat --prepare`
+çalıştırın. Ayrıntılar için [Windows hızlı başlangıç rehberine](docs/windows-quickstart.md) bakın.
+
 ## Yerel geliştirme
 
 Backend kaynak kodu `backend/`, frontend kaynak kodu `frontend/` altında bulunur.

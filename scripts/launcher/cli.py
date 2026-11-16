@@ -11,6 +11,7 @@ from .model import LauncherError, Project, Scope
 from .packaging import package_offline
 from .parser import build_parser
 from .production import prod
+from .quickstart import quickstart
 from .runtime import check, dev, test
 
 
@@ -25,6 +26,9 @@ def main(arguments: list[str] | None = None) -> int:
     except (LauncherError, OSError, ValueError) as error:
         print(f"[error] {error}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("\nStartup cancelled.", file=sys.stderr)
+        return 130
 
 
 def dispatch(project: Project, args: argparse.Namespace) -> None:
@@ -51,7 +55,10 @@ def dispatch(project: Project, args: argparse.Namespace) -> None:
             certificate_file=Path(args.tls_cert_file).expanduser().absolute(),
             private_key_file=Path(args.tls_key_file).expanduser().absolute(),
             migrate=args.migrate, build_frontend=args.build_frontend, check_only=args.check,
+            prepare_only=args.prepare_only, ensure_admin=args.ensure_admin,
         )
+    elif args.command == "quickstart":
+        quickstart(project, configure=args.configure, prepare=args.prepare)
     elif args.command == "prepare-offline":
         prepare_offline(project, scope, project_path(project, args.offline_dir))
     elif args.command == "package-offline":

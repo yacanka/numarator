@@ -38,6 +38,13 @@ def build_parser() -> argparse.ArgumentParser:
     production.add_argument("--build-frontend", action="store_true")
     production.add_argument("--migrate", action="store_true")
     production.add_argument("--check", action="store_true", help="Validate deployment without starting the server.")
+    production.add_argument("--prepare-only", action="store_true", help="Prepare deployment and exit without serving.")
+    production.add_argument("--ensure-admin", action="store_true", help="Create the first admin interactively during preparation.")
+
+    quickstart = commands.add_parser("quickstart", help="Set up once and start the Windows local or production profile.")
+    add_environment(quickstart)
+    quickstart.add_argument("--configure", action="store_true", help="Change saved ports or production TLS paths.")
+    quickstart.add_argument("--prepare", action="store_true", help="Explicitly install dependencies and prepare the database/build.")
 
     prepare = commands.add_parser(
         "prepare-offline", help="Download and verify offline dependencies."

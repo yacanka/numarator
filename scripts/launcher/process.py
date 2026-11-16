@@ -9,7 +9,7 @@ import signal
 import subprocess
 import time
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from .model import LauncherError
 
@@ -68,6 +68,10 @@ def start(
     process_group: bool = False,
 ) -> subprocess.Popen:
     print(f"[start] {display(command)}\n        cwd: {cwd}", flush=True)
+    if process_group and os.name == "nt":
+        from .windows_process import start as windows_start
+
+        return windows_start([str(part) for part in command], cwd, env=environment(extra_env))
     return subprocess.Popen(
         [str(part) for part in command], cwd=cwd, env=environment(extra_env),
         start_new_session=process_group and os.name != "nt",
@@ -75,9 +79,21 @@ def start(
     )
 
 
-def supervise(processes: list[subprocess.Popen], *, process_groups: bool = False) -> None:
+def supervise(
+    processes: list[subprocess.Popen], *, process_groups: bool = False,
+    ready: Callable[[], bool] | None = None, startup_timeout: float = 60.0,
+) -> None:
+    """Own child cleanup and, optionally, wait for bounded startup readiness."""
     try:
+        deadline = time.monotonic() + startup_timeout
         while all(process.poll() is None for process in processes):
+            if ready is not None:
+                if time.monotonic() >= deadline:
+                    raise LauncherError(f"services timed out becoming ready after {startup_timeout:g} seconds")
+                if ready():
+                    if time.monotonic() >= deadline:
+                        raise LauncherError(f"services timed out becoming ready after {startup_timeout:g} seconds")
+                    ready = None
             time.sleep(0.25)
         exited = next(process for process in processes if process.poll() is not None)
         raise LauncherError(f"server process exited with code {exited.returncode}")
@@ -88,6 +104,17 @@ def supervise(processes: list[subprocess.Popen], *, process_groups: bool = False
 
 
 def terminate(processes: Sequence[subprocess.Popen], *, process_groups: bool = False) -> None:
+    try:
+        _terminate(processes, process_groups=process_groups)
+    finally:
+        if os.name == "nt":
+            from .windows_process import close_job
+
+            for process in processes:
+                close_job(process)
+
+
+def _terminate(processes: Sequence[subprocess.Popen], *, process_groups: bool) -> None:
     for process in processes:
         try:
             if process_groups and os.name != "nt":
@@ -99,16 +126,28 @@ def terminate(processes: Sequence[subprocess.Popen], *, process_groups: bool = F
                     process.terminate()
         except ProcessLookupError:
             pass
+        except OSError:
+            # A detached Windows console may reject CTRL_BREAK. Job ownership
+            # still provides forced cleanup, including after a leader exits.
+            if not (process_groups and os.name == "nt"):
+                raise
     for process in processes:
-        if process.poll() is not None:
-            continue
         try:
             process.wait(timeout=15 if process_groups else 5)
         except subprocess.TimeoutExpired:
-            if process_groups and os.name != "nt":
-                os.killpg(process.pid, signal.SIGKILL)
-            elif process_groups:
-                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False)
-            else:
+            if process_groups and os.name == "nt":
+                from .windows_process import close_job
+
+                if not close_job(process):
+                    subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False)
+            elif not process_groups:
                 process.kill()
+        if process_groups and os.name != "nt":
+            # A reloader may outlive its leader, so poll()/wait() alone cannot
+            # establish that the complete process group has stopped.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
             process.wait()

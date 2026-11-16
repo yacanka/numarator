@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import http.cookiejar
+import io
 import json
 import os
 import secrets
@@ -14,12 +15,14 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import textwrap
 import threading
 import time
 import unittest
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -166,6 +169,194 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(peak, 1)
 
 
+class PreparationRuntimeTests(unittest.TestCase):
+    def run_runtime(self, root, flags, *, prepare, admin, serve):
+        from config.native_runtime import main
+
+        arguments = ['native_runtime', '--tls-cert-file', 'cert', '--tls-key-file', 'key', *flags]
+        modules = {
+            'config.settings.native_environment': SimpleNamespace(data_dir=root),
+            'config.initial_admin': SimpleNamespace(ensure_initial_admin=admin),
+        }
+        with mock.patch.dict(os.environ, {'DJANGO_SETTINGS_MODULE': 'config.settings.native'}), \
+                mock.patch.dict(sys.modules, modules), mock.patch.object(sys, 'argv', arguments), \
+                mock.patch('django.setup'), mock.patch('django.conf.settings', SimpleNamespace()), \
+                mock.patch('config.native_runtime.prepare', side_effect=prepare), \
+                mock.patch('config.native_runtime.serve', side_effect=serve), \
+                redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            return main()
+
+    def test_preparation_and_admin_share_data_lock_and_never_serve(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            events = []
+
+            def assert_locked(event):
+                with self.assertRaises(CommandError):
+                    with instance_lock(root):
+                        self.fail('preparation released the data lock')
+                events.append(event)
+
+            result = self.run_runtime(
+                root, ['--prepare-only', '--ensure-admin', '--migrate'],
+                prepare=lambda *_: assert_locked('prepare'),
+                admin=lambda: assert_locked('admin'),
+                serve=lambda *_: self.fail('preparation started HTTPS'))
+            self.assertEqual(result, 0)
+            self.assertEqual(events, ['prepare', 'admin'])
+            with instance_lock(root):
+                pass
+
+    def test_invalid_preparation_combinations_fail_before_preparing(self):
+        for flags in (['--ensure-admin'], ['--check', '--prepare-only'],
+                      ['--check', '--prepare-only', '--ensure-admin']):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as temporary:
+                with self.assertRaises(SystemExit) as error:
+                    self.run_runtime(
+                        Path(temporary), flags,
+                        prepare=lambda *_: self.fail('invalid arguments prepared data'),
+                        admin=lambda: self.fail('invalid arguments created an admin'),
+                        serve=lambda *_: self.fail('invalid arguments served HTTPS'))
+                self.assertEqual(error.exception.code, 2)
+
+    def test_failed_preparation_does_not_create_admin_or_serve_and_releases_lock(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def fail_prepare(*_):
+                raise CommandError('preparation failed')
+
+            self.assertEqual(self.run_runtime(
+                root, ['--prepare-only', '--ensure-admin'], prepare=fail_prepare,
+                admin=lambda: self.fail('admin created after failed preparation'),
+                serve=lambda *_: self.fail('HTTPS served after failed preparation')), 1)
+            with instance_lock(root):
+                pass
+
+    def test_interrupted_preparation_is_not_reported_as_success(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def interrupt(*_):
+                raise KeyboardInterrupt
+
+            result = self.run_runtime(
+                root, ['--prepare-only', '--ensure-admin'], prepare=interrupt,
+                admin=lambda: self.fail('admin created after interrupted preparation'),
+                serve=lambda *_: self.fail('interrupted preparation started HTTPS'))
+            self.assertEqual(result, 130)
+            with instance_lock(root):
+                pass
+
+    @mock.patch('config.native_runtime.verify_frontend')
+    @mock.patch('config.native_runtime.call_command')
+    @mock.patch('config.native_tls.validate_tls')
+    def test_preparation_collects_static_after_successful_migrations(self, tls, command, frontend):
+        args = SimpleNamespace(tls_cert_file=Path('cert'), tls_key_file=Path('key'),
+                               check=False, migrate=True, build_frontend=False,
+                               prepare_only=True, ensure_admin=False)
+        prepare(args, SimpleNamespace(HOST='127.0.0.1', FRONTEND_DIST=Path('frontend/dist')))
+        operations = [call.args[0] for call in command.call_args_list]
+        self.assertEqual(operations[-3:], ['migrate', 'migrate', 'collectstatic'])
+
+
+class InitialAdminTests(unittest.TestCase):
+    def run_admin_script(self, script):
+        setup = '''
+import secrets
+from unittest import mock
+from django.conf import settings
+settings.configure(
+    SECRET_KEY=secrets.token_urlsafe(48),
+    INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes'],
+    DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}},
+    PASSWORD_HASHERS=['django.contrib.auth.hashers.MD5PasswordHasher'],
+)
+import django
+django.setup()
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.contrib.auth import get_user_model
+call_command('migrate', interactive=False, verbosity=0)
+from config.initial_admin import ensure_initial_admin
+User = get_user_model()
+'''
+        completed = subprocess.run(
+            [sys.executable, '-c', setup + textwrap.dedent(script)], cwd=ROOT / 'backend',
+            capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_existing_active_superuser_is_preserved_without_prompt(self):
+        self.run_admin_script('''
+            User.objects.create_superuser('existing-admin', password=None)
+            before = list(User.objects.values())
+            with mock.patch('builtins.input', side_effect=AssertionError('unexpected prompt')):
+                ensure_initial_admin()
+            assert list(User.objects.values()) == before
+        ''')
+
+    def test_missing_active_superuser_is_created_interactively_without_changing_accounts(self):
+        self.run_admin_script('''
+            User.objects.create_superuser('disabled-admin', password=None, is_active=False)
+            User.objects.create_user('ordinary-user', password=None, is_staff=True)
+            before = list(User.objects.values())
+            password = secrets.token_urlsafe(32)
+            with mock.patch('sys.stdin.isatty', return_value=True), \\
+                    mock.patch('builtins.input', side_effect=['bootstrap-admin', '']), \\
+                    mock.patch('getpass.getpass', return_value=password):
+                ensure_initial_admin()
+            admin = User.objects.get(username='bootstrap-admin')
+            assert admin.is_active and admin.is_superuser and admin.check_password(password)
+            assert list(User.objects.exclude(pk=admin.pk).values()) == before
+            with mock.patch('builtins.input', side_effect=AssertionError('unexpected prompt')):
+                ensure_initial_admin()
+            assert User.objects.count() == 3
+        ''')
+
+    def test_noninteractive_skip_is_reported_as_failure(self):
+        self.run_admin_script('''
+            with mock.patch('sys.stdin.isatty', return_value=False):
+                try:
+                    ensure_initial_admin()
+                except CommandError:
+                    pass
+                else:
+                    raise AssertionError('missing admin was reported as prepared')
+            assert User.objects.count() == 0
+        ''')
+
+    def test_module_initializes_the_settings_selected_by_the_caller(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'initial_admin_test_settings.py').write_text('''
+import os
+import secrets
+SECRET_KEY = secrets.token_urlsafe(48)
+INSTALLED_APPS = ['django.contrib.auth', 'django.contrib.contenttypes']
+DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3',
+                         'NAME': os.environ['INITIAL_ADMIN_TEST_DATABASE']}}
+''', encoding='utf-8')
+            env = {**os.environ, 'DJANGO_SETTINGS_MODULE': 'initial_admin_test_settings',
+                   'INITIAL_ADMIN_TEST_DATABASE': str(root / 'users.sqlite3'),
+                   'PYTHONPATH': os.pathsep.join((str(root), str(ROOT / 'backend')))}
+            bootstrap = subprocess.run(
+                [sys.executable, '-c', 'import django; django.setup(); '
+                 'from django.core.management import call_command; '
+                 'call_command("migrate", interactive=False, verbosity=0); '
+                 'from django.contrib.auth import get_user_model; '
+                 'get_user_model().objects.create_superuser("existing-admin", password=None)'],
+                cwd=root, env=env, capture_output=True, text=True)
+            self.assertEqual(bootstrap.returncode, 0, bootstrap.stdout + bootstrap.stderr)
+            completed = subprocess.run(
+                [sys.executable, '-m', 'config.initial_admin'], cwd=root, env=env,
+                capture_output=True, text=True)
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            with sqlite3.connect(root / 'users.sqlite3') as database:
+                self.assertEqual(database.execute(
+                    'SELECT username, is_active, is_superuser FROM auth_user').fetchall(),
+                    [('existing-admin', 1, 1)])
+
+
 class HTTPSIntegrationTests(unittest.TestCase):
     def test_real_https_spa_static_api_host_checks_and_restart(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -197,10 +388,11 @@ class HTTPSIntegrationTests(unittest.TestCase):
             with sqlite3.connect(root / 'data/numarator.sqlite3') as database:
                 self.assertEqual(database.execute('SELECT name FROM sqlite_master WHERE type = \'table\'').fetchall(), [])
             password = secrets.token_urlsafe(32)
-            bootstrap = subprocess.run(
-                [sys.executable, 'manage.py', 'migrate', '--noinput'], cwd=backend, env=env,
-                capture_output=True, text=True)
-            self.assertEqual(bootstrap.returncode, 0, bootstrap.stderr)
+            prepared = subprocess.run(
+                [*command, '--prepare-only', '--migrate'], cwd=backend, env=env,
+                capture_output=True, text=True, timeout=30)
+            self.assertEqual(prepared.returncode, 0, prepared.stdout + prepared.stderr)
+            self.assertTrue((root / 'data/staticfiles/admin/css/base.css').is_file())
             bootstrap = subprocess.run(
                 [sys.executable, 'manage.py', 'shell', '-c',
                  "import os, json; from django.contrib.auth import get_user_model; "

@@ -43,7 +43,7 @@ def serve(args, settings) -> None:
     import uvicorn
     from .native_asgi import application
 
-    print(f'Ready: {settings.CSRF_TRUSTED_ORIGINS[0]} (Ctrl+C to stop)', flush=True)
+    print(f'Starting HTTPS: {settings.CSRF_TRUSTED_ORIGINS[0]} (Ctrl+C to stop)', flush=True)
     # A single worker and serialized Django views are part of the SQLite contract.
     uvicorn.run(
         application, host=settings.HOST, port=settings.PORT, workers=1,
@@ -61,11 +61,17 @@ def main() -> int:
     parser.add_argument('--migrate', action='store_true')
     parser.add_argument('--build-frontend', action='store_true')
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--prepare-only', action='store_true')
+    parser.add_argument('--ensure-admin', action='store_true')
     args = parser.parse_args()
     if os.environ.get('DJANGO_SETTINGS_MODULE') != 'config.settings.native':
         parser.error('use launcher.py prod to select the native profile')
     if args.check and (args.migrate or args.build_frontend):
         parser.error('--check cannot migrate or build')
+    if args.check and args.prepare_only:
+        parser.error('--check cannot prepare')
+    if args.ensure_admin and not args.prepare_only:
+        parser.error('--ensure-admin requires --prepare-only')
     try:
         import django
         django.setup()
@@ -75,6 +81,11 @@ def main() -> int:
             prepare(args, settings)
             if args.check:
                 print('[ok] native production checks completed')
+            elif args.prepare_only:
+                if args.ensure_admin:
+                    from .initial_admin import ensure_initial_admin
+                    ensure_initial_admin()
+                print('[ok] native production preparation completed')
             else:
                 serve(args, settings)
         return 0
@@ -85,7 +96,7 @@ def main() -> int:
         print('[error] Production dependencies are missing; run launcher.py setup --environment production', file=sys.stderr)
         return 1
     except KeyboardInterrupt:
-        return 0
+        return 130 if args.prepare_only else 0
 
 
 if __name__ == '__main__':
